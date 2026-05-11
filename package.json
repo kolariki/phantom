@@ -1,6 +1,6 @@
 {
   "name": "phantom-desktop",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Phantom — copiloto IA invisible para macOS. Lee tu pantalla, contesta y se oculta del screen-share.",
   "main": "main.js",
   "author": "Elevum",

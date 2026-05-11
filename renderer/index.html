@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+  <title>Phantom</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="header" id="header">
+      <div class="brand">
+        <span class="dot"></span>
+        <span class="title">Phantom</span>
+      </div>
+      <div class="header-actions">
+        <button class="icon-btn" id="opacity" data-i18n-title="header.opacity_tooltip">◐</button>
+        <button class="icon-btn" id="settings" data-i18n-title="header.settings_tooltip">⚙</button>
+        <button class="icon-btn" id="hide" data-i18n-title="header.hide_tooltip">—</button>
+        <button class="icon-btn" id="close" data-i18n-title="header.close_tooltip">×</button>
+      </div>
+    </div>
+
+    <div class="body">
+      <div class="actions">
+        <button class="btn btn-primary" id="btn-read" data-i18n="nav.read_screen">📄 Leer pantalla</button>
+        <button class="btn btn-secondary" id="btn-answer" data-i18n="nav.answer">💡 Contestar</button>
+      </div>
+
+      <div class="interview-panel collapsible-panel" id="interview-panel" style="display:none;">
+        <div class="interview-header collapsible-header">
+          <span class="collapse-chevron">▾</span>
+          <span class="interview-title" data-i18n="interview.title">🎓 Modo Entrevista</span>
+          <div class="interview-controls">
+            <span class="interview-status" id="interview-status">●</span>
+            <button class="btn btn-mini" id="btn-interview-toggle" data-i18n="interview.auto" data-i18n-title="interview.auto_tooltip">Auto</button>
+            <button class="btn btn-mini btn-record" id="btn-manual-record" data-i18n="interview.record" data-i18n-title="interview.record_tooltip">🔴 Grabar</button>
+          </div>
+        </div>
+        <div class="collapsible-body">
+          <div class="manual-rec-bar" id="manual-rec-bar" style="display:none;">
+            <span class="rec-dot">🔴</span>
+            <span class="rec-timer" id="rec-timer">0:00</span>
+            <span class="rec-hint" data-i18n="interview.recording_hint">Grabando audio del sistema…</span>
+          </div>
+          <div class="interview-question" id="interview-question">
+            <div class="iq-label" data-i18n="interview.detected_question">Pregunta detectada</div>
+            <div class="iq-text" id="interview-question-text">—</div>
+          </div>
+          <div class="interview-answer" id="interview-answer">
+            <div class="ia-label" data-i18n="interview.your_answer">Tu respuesta sugerida</div>
+            <div class="ia-text" id="interview-answer-text" data-i18n="interview.initial_text">Tocá "Iniciar" y empezá la videollamada.</div>
+            <button class="btn btn-mini btn-secondary" id="btn-interview-regenerate" data-i18n="interview.regenerate" style="width:auto;margin-top:6px;display:none;">↻ Regenerar respuesta</button>
+          </div>
+          <div class="manual-transcription" id="manual-transcription" style="display:none;">
+            <div class="mt-label" data-i18n="interview.transcription_label">📝 Transcripción de la grabación</div>
+            <textarea id="manual-transcription-text" rows="3" data-i18n-placeholder="interview.transcription_placeholder"></textarea>
+            <div class="mt-actions">
+              <button class="btn btn-mini btn-secondary" id="btn-manual-discard" data-i18n="interview.discard">Descartar</button>
+              <button class="btn btn-mini btn-primary" id="btn-manual-answer" data-i18n="interview.answer_as_me">💬 Contestar como yo</button>
+            </div>
+          </div>
+          <details class="interview-history" id="interview-history-wrap" style="display:none;">
+            <summary data-i18n="interview.history">Historial de preguntas</summary>
+            <div id="interview-history"></div>
+          </details>
+        </div>
+      </div>
+
+      <div class="translate-panel collapsible-panel" id="translate-panel" style="display:none;">
+        <div class="translate-header collapsible-header">
+          <span class="collapse-chevron">▾</span>
+          <span class="translate-title">🎙️ <span id="translate-lang-label">EN → ES</span></span>
+          <div class="translate-controls">
+            <span class="translate-status" id="translate-status">●</span>
+            <button class="btn btn-mini" id="btn-translate-toggle" data-i18n="translate.start">Iniciar</button>
+          </div>
+        </div>
+        <div class="collapsible-body">
+          <div class="translate-output" id="translate-output">
+            <div class="translate-empty" data-i18n="translate.empty_state">Tocá "Iniciar" y reproducí cualquier audio.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-panel" id="settings-panel" style="display:none;">
+
+        <!-- ─── IDIOMA DE LA APP ─── -->
+        <div class="setting-group">
+          <label class="setting-label" data-i18n="settings.ui_language">🌐 Idioma de la app</label>
+          <select id="cfg-ui-language">
+            <option value="es">Español</option>
+            <option value="en">English</option>
+            <option value="pt">Português</option>
+            <option value="fr">Français</option>
+            <option value="ja">日本語</option>
+            <option value="zh">中文</option>
+          </select>
+        </div>
+
+        <!-- ─── PROVIDER + API KEY ─── -->
+        <div class="setting-group">
+          <label class="setting-label" data-i18n="settings.provider">Proveedor</label>
+          <select id="cfg-provider">
+            <option value="anthropic">Anthropic (Claude)</option>
+            <option value="openai">OpenAI (GPT)</option>
+          </select>
+        </div>
+
+        <div class="setting-group">
+          <label class="setting-label" data-i18n="settings.api_key">API Key</label>
+          <input type="password" id="cfg-apikey" placeholder="sk-ant-... / sk-..." autocomplete="off" />
+          <details class="api-help" id="api-help-anthropic">
+            <summary data-i18n="settings.api_key_help_title">¿Cómo obtengo una API Key?</summary>
+            <ol class="api-help-steps">
+              <li>
+                <span data-i18n="settings.api_key_anthropic_step1">Entrá a</span>
+                <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com</a>
+              </li>
+              <li data-i18n="settings.api_key_anthropic_step2">Creá una cuenta o inicia sesión.</li>
+              <li data-i18n="settings.api_key_anthropic_step3">En "API Keys" → "Create Key".</li>
+              <li data-i18n="settings.api_key_anthropic_step4">Copiá la clave y pegala arriba.</li>
+              <li data-i18n="settings.api_key_anthropic_step5">Cargá saldo en "Billing" (mínimo $5).</li>
+            </ol>
+          </details>
+          <details class="api-help" id="api-help-openai" style="display:none;">
+            <summary data-i18n="settings.api_key_help_title">¿Cómo obtengo una API Key?</summary>
+            <ol class="api-help-steps">
+              <li>
+                <span data-i18n="settings.api_key_openai_step1">Entrá a</span>
+                <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com</a>
+              </li>
+              <li data-i18n="settings.api_key_openai_step2">Creá una cuenta o inicia sesión.</li>
+              <li data-i18n="settings.api_key_openai_step3">Click "Create new secret key".</li>
+              <li data-i18n="settings.api_key_openai_step4">Copiá la clave y pegala arriba.</li>
+              <li data-i18n="settings.api_key_openai_step5">Cargá saldo en "Billing" (mínimo $5).</li>
+            </ol>
+          </details>
+        </div>
+
+        <div class="setting-group">
+          <label class="setting-label" data-i18n="settings.model">Modelo</label>
+          <input type="text" id="cfg-model" placeholder="claude-haiku-4-5 / gpt-4o-mini" />
+        </div>
+
+        <label class="checkbox-row">
+          <input type="checkbox" id="cfg-stealth" checked />
+          <span data-i18n="settings.stealth">🥷 Invisible para screen capture</span>
+        </label>
+
+        <div class="setting-group">
+          <label class="setting-label">
+            <span data-i18n="settings.opacity">Translucidez de la ventana</span>
+            <span id="cfg-opacity-value" style="float:right;color:#3b82f6;font-weight:700;">100%</span>
+          </label>
+          <input type="range" id="cfg-opacity" min="15" max="100" step="5" value="100" style="width:100%;cursor:pointer;" />
+          <div class="hint" data-i18n-html="settings.opacity_hint" style="font-size:10px;padding:2px 0;background:none;border:none;"></div>
+        </div>
+
+        <div class="setting-divider" data-i18n="settings.translate_divider">🎙️ Traducción en vivo</div>
+
+        <label class="checkbox-row">
+          <input type="checkbox" id="cfg-translate" />
+          <span data-i18n="settings.translate_enable">Activar traducción de audio del sistema</span>
+        </label>
+
+        <div class="setting-group">
+          <label class="setting-label" data-i18n="settings.openai_key">OpenAI Key (para Whisper)</label>
+          <input type="password" id="cfg-openai-key" placeholder="sk-..." autocomplete="off" />
+          <div class="hint" data-i18n="settings.openai_key_hint" style="font-size:10px;padding:4px 0;background:none;border:none;"></div>
+        </div>
+
+        <div class="setting-group" style="display:flex;flex-direction:row;gap:8px;">
+          <div style="flex:1;">
+            <label class="setting-label" data-i18n="settings.lang_source">Idioma origen</label>
+            <select id="cfg-translate-from">
+              <option value="auto" data-i18n="settings.lang.auto">Auto-detectar</option>
+              <option value="en" data-i18n="settings.lang.en">Inglés</option>
+              <option value="es" data-i18n="settings.lang.es">Español</option>
+              <option value="pt" data-i18n="settings.lang.pt">Portugués</option>
+              <option value="fr" data-i18n="settings.lang.fr">Francés</option>
+              <option value="it" data-i18n="settings.lang.it">Italiano</option>
+              <option value="de" data-i18n="settings.lang.de">Alemán</option>
+              <option value="ja" data-i18n="settings.lang.ja">Japonés</option>
+              <option value="zh" data-i18n="settings.lang.zh">Chino</option>
+            </select>
+          </div>
+          <div style="flex:1;">
+            <label class="setting-label" data-i18n="settings.lang_target">Idioma destino</label>
+            <select id="cfg-translate-to">
+              <option value="es" data-i18n="settings.lang.es">Español</option>
+              <option value="en" data-i18n="settings.lang.en">Inglés</option>
+              <option value="pt" data-i18n="settings.lang.pt">Portugués</option>
+              <option value="fr" data-i18n="settings.lang.fr">Francés</option>
+              <option value="it" data-i18n="settings.lang.it">Italiano</option>
+              <option value="de" data-i18n="settings.lang.de">Alemán</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="setting-divider" data-i18n="settings.interview_divider">🎓 Modo Entrevista</div>
+
+        <label class="checkbox-row">
+          <input type="checkbox" id="cfg-interview" />
+          <span data-i18n="settings.interview_enable">Activar respuestas automáticas con mi CV</span>
+        </label>
+
+        <div class="setting-group">
+          <label class="setting-label" data-i18n="settings.cv">Tu CV / experiencia</label>
+          <textarea id="cfg-interview-cv" rows="6" data-i18n-placeholder="settings.cv_placeholder" style="font-family:inherit;font-size:12px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:7px;color:#1a3a5c;background:#fff;resize:vertical;"></textarea>
+          <button class="btn btn-secondary btn-mini" id="cfg-upload-cv" data-i18n="settings.upload_file" style="width:auto;margin-top:4px;">📎 Cargar desde archivo</button>
+        </div>
+
+        <div class="setting-group">
+          <label class="setting-label" data-i18n="settings.context">Contexto adicional</label>
+          <textarea id="cfg-interview-context" rows="3" data-i18n-placeholder="settings.context_placeholder" style="font-family:inherit;font-size:12px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:7px;color:#1a3a5c;background:#fff;resize:vertical;"></textarea>
+        </div>
+
+        <div class="setting-group" style="display:flex;flex-direction:row;gap:8px;">
+          <div style="flex:1;">
+            <label class="setting-label" data-i18n="settings.style">Estilo</label>
+            <select id="cfg-interview-style">
+              <option value="concise" data-i18n="settings.style.concise">Conciso</option>
+              <option value="detailed" data-i18n="settings.style.detailed">Detallado</option>
+              <option value="complete" data-i18n="settings.style.complete">Completo</option>
+            </select>
+          </div>
+          <div style="flex:1;">
+            <label class="setting-label" data-i18n="settings.answer_lang">Idioma respuesta</label>
+            <select id="cfg-interview-language">
+              <option value="auto" data-i18n="settings.answer_lang.auto">Igual a la pregunta</option>
+              <option value="es" data-i18n="settings.lang.es">Español</option>
+              <option value="en" data-i18n="settings.lang.en">Inglés</option>
+              <option value="pt" data-i18n="settings.lang.pt">Portugués</option>
+              <option value="fr" data-i18n="settings.lang.fr">Francés</option>
+              <option value="ja" data-i18n="settings.lang.ja">Japonés</option>
+              <option value="zh" data-i18n="settings.lang.zh">Chino</option>
+            </select>
+          </div>
+        </div>
+
+        <button class="btn btn-primary btn-mini" id="cfg-save" data-i18n="settings.save">Guardar</button>
+
+        <div class="hint" data-i18n-html="settings.shortcuts_hint"></div>
+      </div>
+
+      <div class="status" id="status" data-i18n="status.initial">Listo. Tocá un botón para empezar.</div>
+
+      <div class="conversation" id="conversation"></div>
+
+      <div class="chat-input-wrap" id="chat-wrap" style="display:none;">
+        <textarea id="chat-input" rows="2" data-i18n-placeholder="chat.placeholder"></textarea>
+        <div class="chat-actions">
+          <button class="btn btn-secondary btn-mini" id="btn-clear" data-i18n="chat.new">Nuevo</button>
+          <button class="btn btn-primary btn-mini" id="btn-send" data-i18n="chat.send">Enviar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="i18n.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
