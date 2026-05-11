@@ -99,21 +99,24 @@ code {
   font-size: clamp(40px, 6vw, 64px);
   font-weight: 900;
   letter-spacing: -0.03em;
-  line-height: 1.18;          /* más espacio vertical para que el italic no quede cortado */
-  padding-bottom: 0.1em;       /* margen extra al fondo para descenders */
+  line-height: 1.2;
   margin-bottom: 20px;
   color: var(--navy);
 }
 .hero h1 em {
   font-style: italic;
-  display: inline-block;       /* clave: hace que el contenedor respete la altura completa del italic */
-  padding: 0 0.05em 0.08em;    /* aire arriba/abajo/al lado para el clip del gradiente */
-  background: linear-gradient(135deg, var(--blue), var(--purple));
+  display: inline-block;
+  /* Padding generoso para que el clip del gradiente nunca corte los descenders/italic */
+  padding: 0.15em 0.12em 0.3em 0.12em;
+  /* Negative margins para que ese padding NO afecte el layout (la línea queda igual) */
+  margin: -0.15em -0.12em -0.3em -0.12em;
+  /* Gradiente igual al botón de Download (navy → blue) */
+  background: linear-gradient(135deg, var(--navy) 0%, var(--blue) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
-  line-height: 1.18;
+  line-height: 1.2;
 }
 .lead {
   font-size: 19px;
