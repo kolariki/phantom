@@ -7,7 +7,6 @@
   <meta name="description" content="Copiloto IA invisible para macOS. Lee tu pantalla, contesta y desaparece de cualquier screen-share." />
   <meta property="og:title" content="Phantom — The AI nobody sees but you" />
   <meta property="og:description" content="Invisible AI copilot for macOS. Reads your screen, answers anything, hides from screen-share." />
-  <meta property="og:image" content="https://kolariki.github.io/phantom/img/og.png" />
   <link rel="icon" type="image/png" href="img/icon.png" />
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -39,7 +38,7 @@
     <div class="hero-text">
       <div class="badge" data-i18n="hero.badge">🥷 Invisible al screen-share</div>
       <h1 data-i18n-html="hero.title">El copiloto de IA<br/>que solo <em>vos</em> ves.</h1>
-      <p class="lead" data-i18n="hero.lead">Lee tu pantalla, te dicta la respuesta a cualquier pregunta, traduce conversaciones en vivo y te ayuda en entrevistas con tu CV. Pero en Zoom, Meet o cualquier grabación: <strong>no existe.</strong></p>
+      <p class="lead" data-i18n-html="hero.lead">Lee tu pantalla, te dicta la respuesta a cualquier pregunta…</p>
       <div class="cta-row">
         <a href="https://github.com/kolariki/phantom/releases/latest/download/Phantom-1.1.0-arm64.dmg" class="btn-primary">
           <span>⬇</span>
@@ -60,10 +59,8 @@
   <!-- ─── Annotated screenshot ─────────────────────────── -->
   <section class="mockup-section" id="features">
     <h2 data-i18n="mockup.title">Todo lo que Phantom puede hacer</h2>
-    <p class="subtitle" data-i18n="mockup.subtitle">Pasá el mouse por cada feature para resaltar la flecha.</p>
+    <p class="subtitle" data-i18n="mockup.subtitle">Pasá el mouse por cada feature para destacarla en la imagen.</p>
 
-    <!-- Stage: el screenshot real + labels alrededor + SVG con flechas -->
-    <!-- Coordenadas en porcentaje sobre el screenshot (642x900 aprox) -->
     <div class="stage">
 
       <!-- LEFT LABELS -->
@@ -86,53 +83,14 @@
         </div>
         <div class="feat" data-feat="stealth">
           <h4 data-i18n="feat.stealth.title">🥷 Invisible al screen-share</h4>
-          <p data-i18n="feat.stealth.desc">No se ve en Zoom, Meet, Teams, OBS ni en screenshots.</p>
+          <p data-i18n-html="feat.stealth.desc">No se ve en Zoom, Meet, Teams, OBS ni en screenshots.</p>
         </div>
       </div>
 
-      <!-- CENTER: screenshot real -->
-      <div class="screenshot-wrap">
+      <!-- CENTER: screenshot real con spotlight overlay -->
+      <div class="screenshot-wrap" id="screenshot-wrap">
         <img src="img/phantom-screenshot.png" alt="Phantom interface" id="phantom-img" />
-        <!-- SVG arrows overlay — viewBox matches image dimensions 643x896 -->
-        <svg class="overlay-arrows" id="arrows-svg" viewBox="0 0 643 896" preserveAspectRatio="xMidYMid meet">
-          <defs>
-            <marker id="ah" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
-              <polygon points="0 0, 10 4, 0 8" fill="currentColor" />
-            </marker>
-          </defs>
-          <!-- LEFT arrows (start at x=-400, outside image) -->
-          <g class="arrow-g" data-target="read-screen" style="color:#3b82f6;">
-            <path d="M -400 51 C -150 51, 0 60, 115 78" stroke="currentColor" fill="none" stroke-width="3" stroke-dasharray="7 5" marker-end="url(#ah)" />
-          </g>
-          <g class="arrow-g" data-target="interview" style="color:#a855f7;">
-            <path d="M -400 220 C -150 220, 50 200, 200 145" stroke="currentColor" fill="none" stroke-width="3" stroke-dasharray="7 5" marker-end="url(#ah)" />
-          </g>
-          <g class="arrow-g" data-target="language" style="color:#16a34a;">
-            <path d="M -400 423 C -150 423, 150 350, 320 305" stroke="currentColor" fill="none" stroke-width="3" stroke-dasharray="7 5" marker-end="url(#ah)" />
-          </g>
-          <g class="arrow-g" data-target="apikey" style="color:#f59e0b;">
-            <path d="M -400 608 C -150 608, 150 520, 320 460" stroke="currentColor" fill="none" stroke-width="3" stroke-dasharray="7 5" marker-end="url(#ah)" />
-          </g>
-          <g class="arrow-g" data-target="stealth" style="color:#dc2626;">
-            <path d="M -400 794 C -150 794, 30 700, 60 568" stroke="currentColor" fill="none" stroke-width="3" stroke-dasharray="7 5" marker-end="url(#ah)" />
-          </g>
-          <!-- RIGHT arrows (start at x=1043, outside image) -->
-          <g class="arrow-g" data-target="answer" style="color:#3b82f6;">
-            <path d="M 1043 51 C 800 51, 600 60, 480 78" stroke="currentColor" fill="none" stroke-width="3" stroke-dasharray="7 5" marker-end="url(#ah)" />
-          </g>
-          <g class="arrow-g" data-target="record" style="color:#a855f7;">
-            <path d="M 1043 220 C 800 220, 700 180, 580 150" stroke="currentColor" fill="none" stroke-width="3" stroke-dasharray="7 5" marker-end="url(#ah)" />
-          </g>
-          <g class="arrow-g" data-target="translate" style="color:#0ea5e9;">
-            <path d="M 1043 423 C 800 423, 700 320, 580 215" stroke="currentColor" fill="none" stroke-width="3" stroke-dasharray="7 5" marker-end="url(#ah)" />
-          </g>
-          <g class="arrow-g" data-target="opacity" style="color:#06b6d4;">
-            <path d="M 1043 608 C 800 608, 600 605, 480 605" stroke="currentColor" fill="none" stroke-width="3" stroke-dasharray="7 5" marker-end="url(#ah)" />
-          </g>
-          <g class="arrow-g" data-target="hotkey" style="color:#64748b;">
-            <path d="M 1043 794 C 800 794, 700 200, 590 30" stroke="currentColor" fill="none" stroke-width="3" stroke-dasharray="7 5" marker-end="url(#ah)" />
-          </g>
-        </svg>
+        <div class="spotlight" id="spotlight"></div>
       </div>
 
       <!-- RIGHT LABELS -->
@@ -155,7 +113,7 @@
         </div>
         <div class="feat" data-feat="hotkey">
           <h4 data-i18n="feat.hotkey.title">⌨️ Atajos globales</h4>
-          <p data-i18n="feat.hotkey.desc">Ocultá / mostrá / analizá desde cualquier app.</p>
+          <p data-i18n-html="feat.hotkey.desc">Ocultá / mostrá / analizá desde cualquier app.</p>
         </div>
       </div>
     </div>

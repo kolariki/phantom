@@ -1,8 +1,8 @@
 /**
  * landing.js
- *   - Cambio de idioma con persistencia en localStorage
- *   - Auto-detect del idioma del browser
- *   - Highlight de flechas al hacer hover en feature labels
+ *   - Cambio de idioma con persistencia
+ *   - Spotlight: al pasar el mouse sobre una feature, destaca la zona correspondiente
+ *     en el screenshot (con un agujero brillante sobre fondo oscurecido)
  */
 
 const LANG_SELECT = document.getElementById('lang-select');
@@ -35,14 +35,46 @@ LANG_SELECT.value = initLang;
 applyLang(initLang);
 LANG_SELECT.addEventListener('change', e => applyLang(e.target.value));
 
-// ─── Highlight arrows on hover ─────────────────
-function highlightArrow(feat, on) {
-  const g = document.querySelector(`.arrow-g[data-target="${feat}"]`);
-  if (g) g.classList.toggle('highlight', on);
+// ─── SPOTLIGHT ────────────────────────────────────────────
+// Cada feature tiene un "box" en porcentajes del screenshot (643x896).
+// {left, top, width, height} en %.
+const SPOTS = {
+  'read-screen': { left: 3,  top: 7,    width: 45, height: 5  },
+  'answer':      { left: 51, top: 7,    width: 45, height: 5  },
+  'interview':   { left: 3,  top: 13,   width: 94, height: 7  },
+  'record':      { left: 80, top: 14,   width: 17, height: 6  },
+  'translate':   { left: 3,  top: 21,   width: 94, height: 6  },
+  'language':    { left: 3,  top: 29,   width: 94, height: 7  },
+  'apikey':      { left: 3,  top: 44,   width: 94, height: 10 },
+  'stealth':     { left: 3,  top: 61,   width: 94, height: 5  },
+  'opacity':     { left: 3,  top: 66,   width: 95, height: 10 },
+  'hotkey':      { left: 80, top: 1,    width: 17, height: 5  }
+};
+
+const wrap = document.getElementById('screenshot-wrap');
+const spotlight = document.getElementById('spotlight');
+
+function showSpot(feat) {
+  const s = SPOTS[feat];
+  if (!s) return;
+  spotlight.style.left = s.left + '%';
+  spotlight.style.top = s.top + '%';
+  spotlight.style.width = s.width + '%';
+  spotlight.style.height = s.height + '%';
+  wrap.classList.add('active');
+}
+function hideSpot() {
+  wrap.classList.remove('active');
 }
 
 document.querySelectorAll('.feat').forEach(el => {
   const f = el.dataset.feat;
-  el.addEventListener('mouseenter', () => highlightArrow(f, true));
-  el.addEventListener('mouseleave', () => highlightArrow(f, false));
+  el.addEventListener('mouseenter', () => {
+    el.classList.add('active');
+    showSpot(f);
+  });
+  el.addEventListener('mouseleave', () => {
+    el.classList.remove('active');
+    hideSpot();
+  });
 });
