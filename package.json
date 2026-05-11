@@ -1,0 +1,59 @@
+{
+  "name": "phantom-desktop",
+  "version": "1.0.0",
+  "description": "Phantom — copiloto IA invisible para macOS. Lee tu pantalla, contesta y se oculta del screen-share.",
+  "main": "main.js",
+  "author": "Elevum",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build:mac": "electron-builder --mac --arm64 --x64",
+    "build:mac-dmg": "electron-builder --mac dmg",
+    "build:dev": "SKIP_NOTARIZE=true electron-builder --mac dmg",
+    "release": "./scripts/release.sh"
+  },
+  "devDependencies": {
+    "electron": "^32.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.elevum.phantom",
+    "productName": "Phantom",
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "assets/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "assets/icon-1024.png",
+      "target": ["dmg", "zip"],
+      "identity": "Ivan Kolarik (U858VRJWB9)",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": {
+        "teamId": "U858VRJWB9"
+      },
+      "extendInfo": {
+        "NSScreenCaptureUsageDescription": "Phantom necesita capturar la pantalla para que la IA pueda leerla y responderte.",
+        "NSCameraUsageDescription": "Phantom no usa cámara.",
+        "NSMicrophoneUsageDescription": "Phantom necesita acceso al micrófono para capturar audio del sistema (Whisper + Interview Mode).",
+        "NSAppleEventsUsageDescription": "Phantom interactúa con otras apps cuando lo permitís.",
+        "LSUIElement": true,
+        "LSBackgroundOnly": false
+      }
+    },
+    "dmg": {
+      "writeUpdateInfo": false,
+      "sign": true
+    },
+    "afterSign": "./scripts/after-sign.js",
+    "afterPack": "./scripts/after-pack.js",
+    "directories": {
+      "output": "dist"
+    }
+  }
+}
