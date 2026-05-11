@@ -99,15 +99,21 @@ code {
   font-size: clamp(40px, 6vw, 64px);
   font-weight: 900;
   letter-spacing: -0.03em;
-  line-height: 1.05;
+  line-height: 1.18;          /* más espacio vertical para que el italic no quede cortado */
+  padding-bottom: 0.1em;       /* margen extra al fondo para descenders */
   margin-bottom: 20px;
   color: var(--navy);
 }
 .hero h1 em {
   font-style: italic;
+  display: inline-block;       /* clave: hace que el contenedor respete la altura completa del italic */
+  padding: 0 0.05em 0.08em;    /* aire arriba/abajo/al lado para el clip del gradiente */
   background: linear-gradient(135deg, var(--blue), var(--purple));
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
+  color: transparent;
+  line-height: 1.18;
 }
 .lead {
   font-size: 19px;

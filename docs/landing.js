@@ -20,12 +20,10 @@ function applyLang(lang) {
   document.documentElement.lang = lang;
   localStorage.setItem('phantom_landing_lang', lang);
 
-  document.querySelectorAll('[data-i18n]').forEach(el => {
-    const k = el.dataset.i18n;
-    if (dict[k]) el.textContent = dict[k];
-  });
-  document.querySelectorAll('[data-i18n-html]').forEach(el => {
-    const k = el.dataset.i18nHtml;
+  // Usamos innerHTML para TODOS los data-i18n / data-i18n-html.
+  // Las traducciones son nuestras y pueden contener <strong>, <br/>, <code>, <em>.
+  document.querySelectorAll('[data-i18n], [data-i18n-html]').forEach(el => {
+    const k = el.dataset.i18n || el.dataset.i18nHtml;
     if (dict[k]) el.innerHTML = dict[k];
   });
 }
