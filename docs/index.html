@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Phantom — The AI nobody sees but you</title>
+  <meta name="description" content="Copiloto IA invisible para macOS. Lee tu pantalla, contesta y desaparece de cualquier screen-share." />
+  <meta property="og:title" content="Phantom — The AI nobody sees but you" />
+  <meta property="og:description" content="Invisible AI copilot for macOS. Reads your screen, answers anything, hides from screen-share." />
+  <meta property="og:image" content="https://kolariki.github.io/phantom/img/og.png" />
+  <link rel="icon" type="image/png" href="img/icon.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- ─── Top bar ──────────────────────────────────────── -->
+  <header class="topbar">
+    <a href="#" class="brand">
+      <img src="img/icon.png" alt="Phantom" />
+      <span>Phantom</span>
+    </a>
+    <nav class="topnav">
+      <a href="#features" data-i18n="nav.features">Features</a>
+      <a href="#download" data-i18n="nav.download">Download</a>
+      <a href="https://github.com/kolariki/phantom" target="_blank">GitHub</a>
+    </nav>
+    <select class="lang-select" id="lang-select">
+      <option value="es">🇪🇸 Español</option>
+      <option value="en">🇬🇧 English</option>
+      <option value="pt">🇧🇷 Português</option>
+      <option value="fr">🇫🇷 Français</option>
+      <option value="ja">🇯🇵 日本語</option>
+      <option value="zh">🇨🇳 中文</option>
+    </select>
+  </header>
+
+  <!-- ─── Hero ──────────────────────────────────────────── -->
+  <section class="hero">
+    <div class="hero-text">
+      <div class="badge" data-i18n="hero.badge">🥷 Invisible al screen-share</div>
+      <h1 data-i18n-html="hero.title">El copiloto de IA<br/>que solo <em>vos</em> ves.</h1>
+      <p class="lead" data-i18n="hero.lead">Lee tu pantalla, te dicta la respuesta a cualquier pregunta, traduce conversaciones en vivo y te ayuda en entrevistas con tu CV. Pero en Zoom, Meet o cualquier grabación: <strong>no existe.</strong></p>
+      <div class="cta-row">
+        <a href="https://github.com/kolariki/phantom/releases/latest/download/Phantom-1.1.0-arm64.dmg" class="btn-primary">
+          <span>⬇</span>
+          <span data-i18n="hero.download_btn">Descargar para macOS</span>
+        </a>
+        <a href="https://github.com/kolariki/phantom/releases" class="btn-link" data-i18n="hero.see_releases">Ver todas las versiones →</a>
+      </div>
+      <div class="meta">
+        <span data-i18n="hero.meta_signed">✓ Firmado y notarizado por Apple</span>
+        <span class="dot-sep">·</span>
+        <span data-i18n="hero.meta_macos">macOS 11+</span>
+        <span class="dot-sep">·</span>
+        <span data-i18n="hero.meta_free">Gratis · Open source</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── Annotated mockup ─────────────────────────────── -->
+  <section class="mockup-section" id="features">
+    <h2 data-i18n="mockup.title">Todo lo que Phantom puede hacer</h2>
+    <p class="subtitle" data-i18n="mockup.subtitle">Click en cada flecha para entender qué hace.</p>
+
+    <div class="mockup-stage">
+      <!-- Flechas SVG conectando cada feature al mockup -->
+      <svg class="arrows" viewBox="0 0 1200 900" preserveAspectRatio="none">
+        <defs>
+          <marker id="arrowhead" markerWidth="10" markerHeight="8" refX="0" refY="4" orient="auto">
+            <polygon points="0 0, 10 4, 0 8" fill="#3b82f6" />
+          </marker>
+        </defs>
+        <!-- Conectores: cada path va desde una caja externa hacia el mockup -->
+        <path class="arrow" data-target="read-screen" d="M 100 130 Q 350 130 480 175" stroke="#3b82f6" fill="none" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrowhead)" />
+        <path class="arrow" data-target="answer" d="M 1100 130 Q 850 130 720 175" stroke="#3b82f6" fill="none" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrowhead)" />
+        <path class="arrow" data-target="interview" d="M 100 280 Q 280 280 410 270" stroke="#a855f7" fill="none" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrowhead)" />
+        <path class="arrow" data-target="translate" d="M 1100 340 Q 850 340 740 340" stroke="#a855f7" fill="none" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrowhead)" />
+        <path class="arrow" data-target="stealth" d="M 100 480 Q 290 480 420 460" stroke="#dc2626" fill="none" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrowhead)" />
+        <path class="arrow" data-target="opacity" d="M 1100 540 Q 850 540 740 530" stroke="#0ea5e9" fill="none" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrowhead)" />
+        <path class="arrow" data-target="language" d="M 100 660 Q 290 660 420 640" stroke="#16a34a" fill="none" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrowhead)" />
+        <path class="arrow" data-target="apikey" d="M 1100 720 Q 850 720 740 720" stroke="#f59e0b" fill="none" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrowhead)" />
+      </svg>
+
+      <!-- Mockup de la app -->
+      <div class="phantom-mock">
+        <div class="pm-header">
+          <span class="pm-dot"></span>
+          <span class="pm-title">Phantom</span>
+          <span class="pm-spacer"></span>
+          <button class="pm-icon">◐</button>
+          <button class="pm-icon">⚙</button>
+          <button class="pm-icon">—</button>
+          <button class="pm-icon">×</button>
+        </div>
+        <div class="pm-body">
+          <div class="pm-row pm-actions">
+            <button class="pm-btn-primary" data-feature="read-screen" data-i18n="mock.read_screen">📄 Leer pantalla</button>
+            <button class="pm-btn-secondary" data-feature="answer" data-i18n="mock.answer">💡 Contestar</button>
+          </div>
+          <div class="pm-panel pm-interview" data-feature="interview">
+            <div class="pm-panel-h">
+              <span>▾</span>
+              <span data-i18n="mock.interview_title">🎓 Modo Entrevista</span>
+              <button class="pm-mini">Auto</button>
+              <button class="pm-mini pm-red">🔴 <span data-i18n="mock.record">Grabar</span></button>
+            </div>
+          </div>
+          <div class="pm-panel pm-translate" data-feature="translate">
+            <div class="pm-panel-h">
+              <span>▾</span>
+              <span>🎙️ EN → ES</span>
+              <button class="pm-mini" data-i18n="mock.start">Iniciar</button>
+            </div>
+          </div>
+          <div class="pm-panel pm-settings">
+            <div class="pm-section">
+              <label data-feature="language" data-i18n="mock.language_label">🌐 Idioma de la app</label>
+              <div class="pm-select">Español</div>
+            </div>
+            <div class="pm-section">
+              <label data-feature="apikey" data-i18n="mock.apikey_label">API Key</label>
+              <div class="pm-input">••••••••••</div>
+              <div class="pm-help">▸ <span data-i18n="mock.apikey_help">¿Cómo obtengo una API Key?</span></div>
+            </div>
+            <div class="pm-section">
+              <label data-feature="stealth" data-i18n="mock.stealth_label">☑ 🥷 Invisible para screen capture</label>
+            </div>
+            <div class="pm-section">
+              <label data-feature="opacity" data-i18n="mock.opacity_label">Translucidez de la ventana <span style="float:right;color:#3b82f6;">100%</span></label>
+              <div class="pm-slider"><div class="pm-slider-fill"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Labels alrededor del mockup -->
+      <div class="feature-label" style="top: 6%; left: 0;" data-anchor="read-screen">
+        <h4 data-i18n="feat.read_screen.title">📄 Leer pantalla</h4>
+        <p data-i18n="feat.read_screen.desc">Captura lo que ves y te lo resume con IA. Sirve para entender artículos largos, dashboards complicados o cualquier UI desconocida.</p>
+      </div>
+
+      <div class="feature-label right" style="top: 6%; right: 0;" data-anchor="answer">
+        <h4 data-i18n="feat.answer.title">💡 Contestar</h4>
+        <p data-i18n="feat.answer.desc">Detecta preguntas, quizzes o problemas visibles y los resuelve. Devuelve la respuesta correcta + la justificación.</p>
+      </div>
+
+      <div class="feature-label" style="top: 28%; left: 0;" data-anchor="interview">
+        <h4 data-i18n="feat.interview.title">🎓 Modo Entrevista</h4>
+        <p data-i18n="feat.interview.desc">Escucha al entrevistador, transcribe en vivo y te dicta la respuesta como si fueras vos — usando tu CV. Modo Auto o manual con botón "Grabar".</p>
+      </div>
+
+      <div class="feature-label right" style="top: 36%; right: 0;" data-anchor="translate">
+        <h4 data-i18n="feat.translate.title">🎙️ Traducción en vivo</h4>
+        <p data-i18n="feat.translate.desc">Capta el audio del sistema (videollamadas, podcasts, videos) y lo traduce en tiempo real. Whisper transcribe, Claude/GPT traduce.</p>
+      </div>
+
+      <div class="feature-label" style="top: 50%; left: 0;" data-anchor="stealth">
+        <h4 data-i18n="feat.stealth.title">🥷 Invisible al screen-share</h4>
+        <p data-i18n="feat.stealth.desc">Usa <code>setContentProtection</code> de macOS — la misma técnica de Cluely. La ventana NO se ve en Zoom, Meet, Teams, OBS, ni en screenshots del sistema. Solo vos la ves.</p>
+      </div>
+
+      <div class="feature-label right" style="top: 58%; right: 0;" data-anchor="opacity">
+        <h4 data-i18n="feat.opacity.title">◐ Translucidez ajustable</h4>
+        <p data-i18n="feat.opacity.desc">Reducí la opacidad para ver lo que hay detrás de la ventana sin moverla. Slider del 15% al 100% o atajo ⌘+Shift+O para ciclar.</p>
+      </div>
+
+      <div class="feature-label" style="top: 72%; left: 0;" data-anchor="language">
+        <h4 data-i18n="feat.language.title">🌐 6 idiomas</h4>
+        <p data-i18n="feat.language.desc">UI completa en español, inglés, portugués, francés, japonés y chino. Cambiá al vuelo desde Settings.</p>
+      </div>
+
+      <div class="feature-label right" style="top: 80%; right: 0;" data-anchor="apikey">
+        <h4 data-i18n="feat.apikey.title">🔑 API Key con instructivo</h4>
+        <p data-i18n="feat.apikey.desc">Soporte para Anthropic Claude o OpenAI GPT. Guía paso a paso integrada en Settings para conseguir tu API key (la primera vez es gratis).</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── Atajos ───────────────────────────────────────── -->
+  <section class="shortcuts">
+    <h2 data-i18n="shortcuts.title">Atajos globales</h2>
+    <p class="subtitle" data-i18n="shortcuts.subtitle">Phantom vive en background. Lo invocás desde cualquier app.</p>
+    <div class="kbd-grid">
+      <div class="kbd-card">
+        <div class="kbd"><kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>H</kbd></div>
+        <div data-i18n="shortcuts.hide">Ocultar / mostrar</div>
+      </div>
+      <div class="kbd-card">
+        <div class="kbd"><kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>R</kbd></div>
+        <div data-i18n="shortcuts.read">Leer pantalla</div>
+      </div>
+      <div class="kbd-card">
+        <div class="kbd"><kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>A</kbd></div>
+        <div data-i18n="shortcuts.answer">Contestar pregunta</div>
+      </div>
+      <div class="kbd-card">
+        <div class="kbd"><kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>O</kbd></div>
+        <div data-i18n="shortcuts.opacity">Ciclar translucidez</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── Final CTA ────────────────────────────────────── -->
+  <section class="cta" id="download">
+    <h2 data-i18n="cta.title">Probalo ahora</h2>
+    <p data-i18n="cta.subtitle">Descarga directa. Sin registro. Sin tracking.</p>
+    <a href="https://github.com/kolariki/phantom/releases/latest/download/Phantom-1.1.0-arm64.dmg" class="btn-primary big">
+      <span>⬇</span>
+      <span data-i18n="cta.btn">Descargar Phantom 1.1.0</span>
+    </a>
+    <p class="install-note" data-i18n-html="cta.note">Doble click al <code>.dmg</code> → arrastrar a Applications → doble click. Sin warnings, firmado por Apple.</p>
+  </section>
+
+  <footer>
+    <div>© 2026 Phantom · <a href="https://github.com/kolariki/phantom">GitHub</a></div>
+    <div data-i18n="footer.tagline">The AI nobody sees but you.</div>
+  </footer>
+
+  <script src="landing-i18n.js"></script>
+  <script src="landing.js"></script>
+</body>
+</html>
