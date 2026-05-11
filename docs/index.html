@@ -93,44 +93,44 @@
       <!-- CENTER: screenshot real -->
       <div class="screenshot-wrap">
         <img src="img/phantom-screenshot.png" alt="Phantom interface" id="phantom-img" />
-        <!-- SVG arrows overlay -->
-        <svg class="overlay-arrows" id="arrows-svg" viewBox="0 0 1200 1100" preserveAspectRatio="xMidYMid meet">
+        <!-- SVG arrows overlay — viewBox matches image dimensions 643x896 -->
+        <svg class="overlay-arrows" id="arrows-svg" viewBox="0 0 643 896" preserveAspectRatio="xMidYMid meet">
           <defs>
             <marker id="ah" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
               <polygon points="0 0, 10 4, 0 8" fill="currentColor" />
             </marker>
           </defs>
-          <!-- Left arrows -->
+          <!-- LEFT arrows (start at x=-400, outside image) -->
           <g class="arrow-g" data-target="read-screen" style="color:#3b82f6;">
-            <path d="M -10 90 C 200 90, 250 90, 400 95" stroke="currentColor" fill="none" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#ah)" />
+            <path d="M -400 51 C -150 51, 0 60, 115 78" stroke="currentColor" fill="none" stroke-width="3" stroke-dasharray="7 5" marker-end="url(#ah)" />
           </g>
           <g class="arrow-g" data-target="interview" style="color:#a855f7;">
-            <path d="M -10 295 C 200 295, 280 165, 405 165" stroke="currentColor" fill="none" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#ah)" />
+            <path d="M -400 220 C -150 220, 50 200, 200 145" stroke="currentColor" fill="none" stroke-width="3" stroke-dasharray="7 5" marker-end="url(#ah)" />
           </g>
           <g class="arrow-g" data-target="language" style="color:#16a34a;">
-            <path d="M -10 500 C 200 500, 280 350, 405 350" stroke="currentColor" fill="none" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#ah)" />
+            <path d="M -400 423 C -150 423, 150 350, 320 305" stroke="currentColor" fill="none" stroke-width="3" stroke-dasharray="7 5" marker-end="url(#ah)" />
           </g>
           <g class="arrow-g" data-target="apikey" style="color:#f59e0b;">
-            <path d="M -10 700 C 200 700, 270 540, 405 540" stroke="currentColor" fill="none" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#ah)" />
+            <path d="M -400 608 C -150 608, 150 520, 320 460" stroke="currentColor" fill="none" stroke-width="3" stroke-dasharray="7 5" marker-end="url(#ah)" />
           </g>
           <g class="arrow-g" data-target="stealth" style="color:#dc2626;">
-            <path d="M -10 900 C 200 900, 270 715, 405 715" stroke="currentColor" fill="none" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#ah)" />
+            <path d="M -400 794 C -150 794, 30 700, 60 568" stroke="currentColor" fill="none" stroke-width="3" stroke-dasharray="7 5" marker-end="url(#ah)" />
           </g>
-          <!-- Right arrows -->
+          <!-- RIGHT arrows (start at x=1043, outside image) -->
           <g class="arrow-g" data-target="answer" style="color:#3b82f6;">
-            <path d="M 1210 90 C 1000 90, 950 90, 800 95" stroke="currentColor" fill="none" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#ah)" />
+            <path d="M 1043 51 C 800 51, 600 60, 480 78" stroke="currentColor" fill="none" stroke-width="3" stroke-dasharray="7 5" marker-end="url(#ah)" />
           </g>
           <g class="arrow-g" data-target="record" style="color:#a855f7;">
-            <path d="M 1210 295 C 1000 295, 920 165, 795 165" stroke="currentColor" fill="none" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#ah)" />
+            <path d="M 1043 220 C 800 220, 700 180, 580 150" stroke="currentColor" fill="none" stroke-width="3" stroke-dasharray="7 5" marker-end="url(#ah)" />
           </g>
           <g class="arrow-g" data-target="translate" style="color:#0ea5e9;">
-            <path d="M 1210 500 C 1000 500, 920 245, 795 245" stroke="currentColor" fill="none" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#ah)" />
+            <path d="M 1043 423 C 800 423, 700 320, 580 215" stroke="currentColor" fill="none" stroke-width="3" stroke-dasharray="7 5" marker-end="url(#ah)" />
           </g>
           <g class="arrow-g" data-target="opacity" style="color:#06b6d4;">
-            <path d="M 1210 700 C 1000 700, 920 630, 795 630" stroke="currentColor" fill="none" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#ah)" />
+            <path d="M 1043 608 C 800 608, 600 605, 480 605" stroke="currentColor" fill="none" stroke-width="3" stroke-dasharray="7 5" marker-end="url(#ah)" />
           </g>
           <g class="arrow-g" data-target="hotkey" style="color:#64748b;">
-            <path d="M 1210 900 C 1000 900, 920 50, 745 50" stroke="currentColor" fill="none" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#ah)" />
+            <path d="M 1043 794 C 800 794, 700 200, 590 30" stroke="currentColor" fill="none" stroke-width="3" stroke-dasharray="7 5" marker-end="url(#ah)" />
           </g>
         </svg>
       </div>
