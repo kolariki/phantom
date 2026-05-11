@@ -123,6 +123,7 @@ code {
   align-items: center;
   justify-content: center;
   margin-bottom: 18px;
+  flex-wrap: wrap;
 }
 .btn-primary {
   display: inline-flex;
@@ -156,7 +157,7 @@ code {
 
 /* ─── Mockup section ──────────────────────────── */
 .mockup-section {
-  padding: 100px 32px 60px;
+  padding: 80px 32px 60px;
   text-align: center;
   background: linear-gradient(180deg, #fafbfc 0%, #f0f6ff 50%, #fafbfc 100%);
 }
@@ -175,249 +176,93 @@ code {
   margin-bottom: 60px;
 }
 
-.mockup-stage {
-  position: relative;
-  max-width: 1200px;
+/* ─── Stage: tres columnas (labels izq / screenshot / labels der) ─── */
+.stage {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 20px;
+  max-width: 1300px;
   margin: 0 auto;
-  min-height: 900px;
+  align-items: start;
+  position: relative;
 }
 
-.arrows {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 1;
-}
-.arrow {
-  opacity: 0.7;
-  transition: opacity 0.2s, stroke-width 0.2s;
-}
-.arrow.highlight {
-  opacity: 1;
-  stroke-width: 3;
-}
-
-/* ─── Phantom mock (centro) ───────────────────── */
-.phantom-mock {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 420px;
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  box-shadow: 0 30px 60px rgba(15, 23, 42, 0.18);
-  overflow: hidden;
-  z-index: 2;
-}
-.pm-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 11px 14px;
-  background: linear-gradient(135deg, var(--navy), var(--blue));
-  color: #fff;
-  font-weight: 700;
-  font-size: 14px;
-}
-.pm-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #60a5fa;
-  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.35);
-}
-.pm-title { font-weight: 700; }
-.pm-spacer { flex: 1; }
-.pm-icon {
-  width: 26px;
-  height: 26px;
-  border: none;
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.pm-body {
-  padding: 14px;
+.label-col {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 60px;
+  padding-top: 40px;
 }
-.pm-row.pm-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-.pm-btn-primary,
-.pm-btn-secondary {
-  padding: 12px;
-  border: none;
-  border-radius: 9px;
-  font-weight: 700;
-  font-size: 13px;
-  cursor: pointer;
-  transition: transform 0.15s;
-}
-.pm-btn-primary {
-  background: linear-gradient(135deg, var(--navy), var(--blue));
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
-}
-.pm-btn-secondary {
-  background: #f1f5f9;
-  color: var(--navy);
-  border: 1px solid var(--border);
-}
-.pm-btn-primary:hover,
-.pm-btn-secondary:hover {
-  transform: translateY(-2px);
-}
-
-.pm-panel {
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: #fff;
-}
-.pm-panel.pm-interview {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.05), rgba(168, 85, 247, 0.06));
-  border-color: #d4d4f8;
-}
-.pm-panel.pm-translate {
-  background: linear-gradient(135deg, rgba(26, 58, 92, 0.04), rgba(59, 130, 246, 0.07));
-  border-color: #c7dafe;
-}
-.pm-panel-h {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--navy);
-}
-.pm-panel-h > *:nth-child(2) { flex: 1; }
-.pm-mini {
-  border: none;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 700;
-  background: #fff;
-  color: var(--navy);
-  border: 1px solid var(--border);
-  cursor: pointer;
-}
-.pm-mini.pm-red {
-  color: var(--red);
-  border-color: var(--red);
-}
-
-.pm-settings {
-  background: #f8fafc;
-  padding: 12px;
-}
-.pm-section {
-  margin-bottom: 10px;
-}
-.pm-section:last-child { margin-bottom: 0; }
-.pm-section label {
-  display: block;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-  color: var(--navy);
-  margin-bottom: 5px;
-}
-.pm-select,
-.pm-input {
-  padding: 8px 10px;
-  background: #fff;
-  border: 1px solid #cbd5e1;
-  border-radius: 7px;
-  font-size: 13px;
-  color: var(--navy);
-  letter-spacing: 1px;
-}
-.pm-help {
-  font-size: 11px;
-  color: #0369a1;
-  margin-top: 4px;
-  font-weight: 600;
-}
-.pm-slider {
-  height: 6px;
-  background: #e2e8f0;
-  border-radius: 3px;
-  margin-top: 4px;
-  position: relative;
-}
-.pm-slider-fill {
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, rgba(59,130,246,0.2), var(--blue));
-  border-radius: 3px;
-}
-
-/* ─── Feature labels (alrededor del mockup) ──── */
-.feature-label {
-  position: absolute;
-  width: 290px;
+.label-col-right { padding-top: 40px; }
+.feat {
   background: #fff;
   border: 1px solid var(--border);
   border-radius: 14px;
-  padding: 16px 18px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  padding: 14px 16px;
+  text-align: left;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06);
   transition: transform 0.2s, box-shadow 0.2s;
+  position: relative;
   z-index: 3;
 }
-.feature-label.right { text-align: right; }
-.feature-label:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.15);
+.label-col-right .feat { text-align: right; }
+.feat:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.15);
 }
-.feature-label h4 {
-  font-size: 15px;
+.feat h4 {
+  font-size: 14px;
   font-weight: 800;
   color: var(--navy);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
-.feature-label p {
-  font-size: 13px;
+.feat p {
+  font-size: 12.5px;
   color: var(--muted);
-  line-height: 1.5;
-}
-.feature-label code {
-  font-size: 11px;
+  line-height: 1.45;
 }
 
-/* En mobile, los features van debajo del mockup en lista */
+.screenshot-wrap {
+  position: relative;
+  width: 380px;
+  max-width: 100%;
+  z-index: 2;
+}
+.screenshot-wrap img {
+  display: block;
+  width: 100%;
+  border-radius: 18px;
+  box-shadow: 0 30px 70px rgba(15, 23, 42, 0.2);
+}
+
+.overlay-arrows {
+  position: absolute;
+  top: 0;
+  left: -260px;
+  width: calc(100% + 520px);
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+  overflow: visible;
+}
+.arrow-g {
+  opacity: 0.55;
+  transition: opacity 0.2s;
+}
+.arrow-g.highlight {
+  opacity: 1;
+}
+
+/* En mobile, las labels van apiladas debajo del screenshot */
 @media (max-width: 1100px) {
-  .mockup-stage { min-height: auto; }
-  .arrows { display: none; }
-  .phantom-mock {
-    position: relative;
-    top: auto;
-    left: auto;
-    transform: none;
-    margin: 0 auto 40px;
+  .stage {
+    grid-template-columns: 1fr;
+    gap: 0;
   }
-  .feature-label {
-    position: relative !important;
-    top: auto !important;
-    left: auto !important;
-    right: auto !important;
-    width: 100%;
-    max-width: 420px;
-    margin: 0 auto 12px;
-    text-align: left !important;
-  }
+  .label-col { padding-top: 24px; gap: 12px; }
+  .screenshot-wrap { margin: 0 auto 24px; width: 320px; }
+  .overlay-arrows { display: none; }
+  .feat, .label-col-right .feat { text-align: left; }
 }
 
 /* ─── Atajos ──────────────────────────────────── */
@@ -496,5 +341,4 @@ footer a { color: var(--blue); font-weight: 600; }
   .topbar { padding: 12px 16px; flex-wrap: wrap; gap: 12px; }
   .topnav { order: 3; width: 100%; justify-content: center; }
   .hero { padding: 40px 16px; }
-  .cta-row { flex-direction: column; }
 }

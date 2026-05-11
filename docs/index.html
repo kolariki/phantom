@@ -57,121 +57,106 @@
     </div>
   </section>
 
-  <!-- ─── Annotated mockup ─────────────────────────────── -->
+  <!-- ─── Annotated screenshot ─────────────────────────── -->
   <section class="mockup-section" id="features">
     <h2 data-i18n="mockup.title">Todo lo que Phantom puede hacer</h2>
-    <p class="subtitle" data-i18n="mockup.subtitle">Click en cada flecha para entender qué hace.</p>
+    <p class="subtitle" data-i18n="mockup.subtitle">Pasá el mouse por cada feature para resaltar la flecha.</p>
 
-    <div class="mockup-stage">
-      <!-- Flechas SVG conectando cada feature al mockup -->
-      <svg class="arrows" viewBox="0 0 1200 900" preserveAspectRatio="none">
-        <defs>
-          <marker id="arrowhead" markerWidth="10" markerHeight="8" refX="0" refY="4" orient="auto">
-            <polygon points="0 0, 10 4, 0 8" fill="#3b82f6" />
-          </marker>
-        </defs>
-        <!-- Conectores: cada path va desde una caja externa hacia el mockup -->
-        <path class="arrow" data-target="read-screen" d="M 100 130 Q 350 130 480 175" stroke="#3b82f6" fill="none" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrowhead)" />
-        <path class="arrow" data-target="answer" d="M 1100 130 Q 850 130 720 175" stroke="#3b82f6" fill="none" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrowhead)" />
-        <path class="arrow" data-target="interview" d="M 100 280 Q 280 280 410 270" stroke="#a855f7" fill="none" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrowhead)" />
-        <path class="arrow" data-target="translate" d="M 1100 340 Q 850 340 740 340" stroke="#a855f7" fill="none" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrowhead)" />
-        <path class="arrow" data-target="stealth" d="M 100 480 Q 290 480 420 460" stroke="#dc2626" fill="none" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrowhead)" />
-        <path class="arrow" data-target="opacity" d="M 1100 540 Q 850 540 740 530" stroke="#0ea5e9" fill="none" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrowhead)" />
-        <path class="arrow" data-target="language" d="M 100 660 Q 290 660 420 640" stroke="#16a34a" fill="none" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrowhead)" />
-        <path class="arrow" data-target="apikey" d="M 1100 720 Q 850 720 740 720" stroke="#f59e0b" fill="none" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrowhead)" />
-      </svg>
+    <!-- Stage: el screenshot real + labels alrededor + SVG con flechas -->
+    <!-- Coordenadas en porcentaje sobre el screenshot (642x900 aprox) -->
+    <div class="stage">
 
-      <!-- Mockup de la app -->
-      <div class="phantom-mock">
-        <div class="pm-header">
-          <span class="pm-dot"></span>
-          <span class="pm-title">Phantom</span>
-          <span class="pm-spacer"></span>
-          <button class="pm-icon">◐</button>
-          <button class="pm-icon">⚙</button>
-          <button class="pm-icon">—</button>
-          <button class="pm-icon">×</button>
+      <!-- LEFT LABELS -->
+      <div class="label-col label-col-left">
+        <div class="feat" data-feat="read-screen">
+          <h4 data-i18n="feat.read_screen.title">📄 Leer pantalla</h4>
+          <p data-i18n="feat.read_screen.desc">Captura lo que ves y te lo resume con IA.</p>
         </div>
-        <div class="pm-body">
-          <div class="pm-row pm-actions">
-            <button class="pm-btn-primary" data-feature="read-screen" data-i18n="mock.read_screen">📄 Leer pantalla</button>
-            <button class="pm-btn-secondary" data-feature="answer" data-i18n="mock.answer">💡 Contestar</button>
-          </div>
-          <div class="pm-panel pm-interview" data-feature="interview">
-            <div class="pm-panel-h">
-              <span>▾</span>
-              <span data-i18n="mock.interview_title">🎓 Modo Entrevista</span>
-              <button class="pm-mini">Auto</button>
-              <button class="pm-mini pm-red">🔴 <span data-i18n="mock.record">Grabar</span></button>
-            </div>
-          </div>
-          <div class="pm-panel pm-translate" data-feature="translate">
-            <div class="pm-panel-h">
-              <span>▾</span>
-              <span>🎙️ EN → ES</span>
-              <button class="pm-mini" data-i18n="mock.start">Iniciar</button>
-            </div>
-          </div>
-          <div class="pm-panel pm-settings">
-            <div class="pm-section">
-              <label data-feature="language" data-i18n="mock.language_label">🌐 Idioma de la app</label>
-              <div class="pm-select">Español</div>
-            </div>
-            <div class="pm-section">
-              <label data-feature="apikey" data-i18n="mock.apikey_label">API Key</label>
-              <div class="pm-input">••••••••••</div>
-              <div class="pm-help">▸ <span data-i18n="mock.apikey_help">¿Cómo obtengo una API Key?</span></div>
-            </div>
-            <div class="pm-section">
-              <label data-feature="stealth" data-i18n="mock.stealth_label">☑ 🥷 Invisible para screen capture</label>
-            </div>
-            <div class="pm-section">
-              <label data-feature="opacity" data-i18n="mock.opacity_label">Translucidez de la ventana <span style="float:right;color:#3b82f6;">100%</span></label>
-              <div class="pm-slider"><div class="pm-slider-fill"></div></div>
-            </div>
-          </div>
+        <div class="feat" data-feat="interview">
+          <h4 data-i18n="feat.interview.title">🎓 Modo Entrevista</h4>
+          <p data-i18n="feat.interview.desc">Escucha al entrevistador y te dicta la respuesta usando tu CV.</p>
+        </div>
+        <div class="feat" data-feat="language">
+          <h4 data-i18n="feat.language.title">🌐 6 idiomas</h4>
+          <p data-i18n="feat.language.desc">UI en español, inglés, portugués, francés, japonés y chino.</p>
+        </div>
+        <div class="feat" data-feat="apikey">
+          <h4 data-i18n="feat.apikey.title">🔑 API Key con instructivo</h4>
+          <p data-i18n="feat.apikey.desc">Guía paso a paso integrada para obtener tu API key.</p>
+        </div>
+        <div class="feat" data-feat="stealth">
+          <h4 data-i18n="feat.stealth.title">🥷 Invisible al screen-share</h4>
+          <p data-i18n="feat.stealth.desc">No se ve en Zoom, Meet, Teams, OBS ni en screenshots.</p>
         </div>
       </div>
 
-      <!-- Labels alrededor del mockup -->
-      <div class="feature-label" style="top: 6%; left: 0;" data-anchor="read-screen">
-        <h4 data-i18n="feat.read_screen.title">📄 Leer pantalla</h4>
-        <p data-i18n="feat.read_screen.desc">Captura lo que ves y te lo resume con IA. Sirve para entender artículos largos, dashboards complicados o cualquier UI desconocida.</p>
+      <!-- CENTER: screenshot real -->
+      <div class="screenshot-wrap">
+        <img src="img/phantom-screenshot.png" alt="Phantom interface" id="phantom-img" />
+        <!-- SVG arrows overlay -->
+        <svg class="overlay-arrows" id="arrows-svg" viewBox="0 0 1200 1100" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <marker id="ah" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+              <polygon points="0 0, 10 4, 0 8" fill="currentColor" />
+            </marker>
+          </defs>
+          <!-- Left arrows -->
+          <g class="arrow-g" data-target="read-screen" style="color:#3b82f6;">
+            <path d="M -10 90 C 200 90, 250 90, 400 95" stroke="currentColor" fill="none" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#ah)" />
+          </g>
+          <g class="arrow-g" data-target="interview" style="color:#a855f7;">
+            <path d="M -10 295 C 200 295, 280 165, 405 165" stroke="currentColor" fill="none" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#ah)" />
+          </g>
+          <g class="arrow-g" data-target="language" style="color:#16a34a;">
+            <path d="M -10 500 C 200 500, 280 350, 405 350" stroke="currentColor" fill="none" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#ah)" />
+          </g>
+          <g class="arrow-g" data-target="apikey" style="color:#f59e0b;">
+            <path d="M -10 700 C 200 700, 270 540, 405 540" stroke="currentColor" fill="none" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#ah)" />
+          </g>
+          <g class="arrow-g" data-target="stealth" style="color:#dc2626;">
+            <path d="M -10 900 C 200 900, 270 715, 405 715" stroke="currentColor" fill="none" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#ah)" />
+          </g>
+          <!-- Right arrows -->
+          <g class="arrow-g" data-target="answer" style="color:#3b82f6;">
+            <path d="M 1210 90 C 1000 90, 950 90, 800 95" stroke="currentColor" fill="none" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#ah)" />
+          </g>
+          <g class="arrow-g" data-target="record" style="color:#a855f7;">
+            <path d="M 1210 295 C 1000 295, 920 165, 795 165" stroke="currentColor" fill="none" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#ah)" />
+          </g>
+          <g class="arrow-g" data-target="translate" style="color:#0ea5e9;">
+            <path d="M 1210 500 C 1000 500, 920 245, 795 245" stroke="currentColor" fill="none" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#ah)" />
+          </g>
+          <g class="arrow-g" data-target="opacity" style="color:#06b6d4;">
+            <path d="M 1210 700 C 1000 700, 920 630, 795 630" stroke="currentColor" fill="none" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#ah)" />
+          </g>
+          <g class="arrow-g" data-target="hotkey" style="color:#64748b;">
+            <path d="M 1210 900 C 1000 900, 920 50, 745 50" stroke="currentColor" fill="none" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#ah)" />
+          </g>
+        </svg>
       </div>
 
-      <div class="feature-label right" style="top: 6%; right: 0;" data-anchor="answer">
-        <h4 data-i18n="feat.answer.title">💡 Contestar</h4>
-        <p data-i18n="feat.answer.desc">Detecta preguntas, quizzes o problemas visibles y los resuelve. Devuelve la respuesta correcta + la justificación.</p>
-      </div>
-
-      <div class="feature-label" style="top: 28%; left: 0;" data-anchor="interview">
-        <h4 data-i18n="feat.interview.title">🎓 Modo Entrevista</h4>
-        <p data-i18n="feat.interview.desc">Escucha al entrevistador, transcribe en vivo y te dicta la respuesta como si fueras vos — usando tu CV. Modo Auto o manual con botón "Grabar".</p>
-      </div>
-
-      <div class="feature-label right" style="top: 36%; right: 0;" data-anchor="translate">
-        <h4 data-i18n="feat.translate.title">🎙️ Traducción en vivo</h4>
-        <p data-i18n="feat.translate.desc">Capta el audio del sistema (videollamadas, podcasts, videos) y lo traduce en tiempo real. Whisper transcribe, Claude/GPT traduce.</p>
-      </div>
-
-      <div class="feature-label" style="top: 50%; left: 0;" data-anchor="stealth">
-        <h4 data-i18n="feat.stealth.title">🥷 Invisible al screen-share</h4>
-        <p data-i18n="feat.stealth.desc">Usa <code>setContentProtection</code> de macOS — la misma técnica de Cluely. La ventana NO se ve en Zoom, Meet, Teams, OBS, ni en screenshots del sistema. Solo vos la ves.</p>
-      </div>
-
-      <div class="feature-label right" style="top: 58%; right: 0;" data-anchor="opacity">
-        <h4 data-i18n="feat.opacity.title">◐ Translucidez ajustable</h4>
-        <p data-i18n="feat.opacity.desc">Reducí la opacidad para ver lo que hay detrás de la ventana sin moverla. Slider del 15% al 100% o atajo ⌘+Shift+O para ciclar.</p>
-      </div>
-
-      <div class="feature-label" style="top: 72%; left: 0;" data-anchor="language">
-        <h4 data-i18n="feat.language.title">🌐 6 idiomas</h4>
-        <p data-i18n="feat.language.desc">UI completa en español, inglés, portugués, francés, japonés y chino. Cambiá al vuelo desde Settings.</p>
-      </div>
-
-      <div class="feature-label right" style="top: 80%; right: 0;" data-anchor="apikey">
-        <h4 data-i18n="feat.apikey.title">🔑 API Key con instructivo</h4>
-        <p data-i18n="feat.apikey.desc">Soporte para Anthropic Claude o OpenAI GPT. Guía paso a paso integrada en Settings para conseguir tu API key (la primera vez es gratis).</p>
+      <!-- RIGHT LABELS -->
+      <div class="label-col label-col-right">
+        <div class="feat" data-feat="answer">
+          <h4 data-i18n="feat.answer.title">💡 Contestar</h4>
+          <p data-i18n="feat.answer.desc">Detecta preguntas o quizzes visibles y los resuelve.</p>
+        </div>
+        <div class="feat" data-feat="record">
+          <h4 data-i18n="feat.record.title">🔴 Grabar manual</h4>
+          <p data-i18n="feat.record.desc">Grabás vos cuando querés, y después pedís la respuesta.</p>
+        </div>
+        <div class="feat" data-feat="translate">
+          <h4 data-i18n="feat.translate.title">🎙️ Traducción en vivo</h4>
+          <p data-i18n="feat.translate.desc">Audio del sistema → Whisper → traducción en tiempo real.</p>
+        </div>
+        <div class="feat" data-feat="opacity">
+          <h4 data-i18n="feat.opacity.title">◐ Translucidez</h4>
+          <p data-i18n="feat.opacity.desc">Ajustá la opacidad para ver lo que hay detrás.</p>
+        </div>
+        <div class="feat" data-feat="hotkey">
+          <h4 data-i18n="feat.hotkey.title">⌨️ Atajos globales</h4>
+          <p data-i18n="feat.hotkey.desc">Ocultá / mostrá / analizá desde cualquier app.</p>
+        </div>
       </div>
     </div>
   </section>
