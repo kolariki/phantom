@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Phantom — Download</title>
+  <link rel="icon" href="img/icon.png" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #fafbfc;
+      --text: #0f172a;
+      --muted: #64748b;
+      --blue: #3b82f6;
+      --navy: #1a3a5c;
+      --green: #16a34a;
+      --border: #e2e8f0;
+    }
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+      font-size: 16px;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+    }
+
+    .page {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 40px 24px;
+      text-align: center;
+    }
+
+    .card {
+      max-width: 560px;
+      width: 100%;
+      background: #fff;
+      border: 2px solid var(--green);
+      border-radius: 24px;
+      padding: 48px 40px 40px;
+      box-shadow: 0 30px 70px rgba(22, 163, 74, 0.12);
+      position: relative;
+    }
+
+    .check-icon {
+      width: 72px;
+      height: 72px;
+      background: linear-gradient(135deg, #16a34a, #22c55e);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 24px;
+      box-shadow: 0 12px 32px rgba(22, 163, 74, 0.3);
+      animation: pop-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .check-icon svg {
+      width: 36px;
+      height: 36px;
+      stroke: #fff;
+      stroke-width: 3;
+      fill: none;
+    }
+
+    @keyframes pop-in {
+      0% { transform: scale(0); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    h1 {
+      font-size: 28px;
+      font-weight: 900;
+      color: var(--navy);
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
+    }
+    .subtitle {
+      font-size: 16px;
+      color: var(--muted);
+      margin-bottom: 36px;
+    }
+
+    .download-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      background: linear-gradient(135deg, var(--navy), var(--blue));
+      color: #fff;
+      padding: 18px 36px;
+      border-radius: 14px;
+      font-weight: 800;
+      font-size: 18px;
+      text-decoration: none;
+      box-shadow: 0 12px 28px rgba(59, 130, 246, 0.35);
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
+      cursor: pointer;
+      border: none;
+      animation: pulse-btn 2.4s ease-in-out infinite;
+    }
+    .download-btn:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 16px 36px rgba(59, 130, 246, 0.5);
+      animation-play-state: paused;
+    }
+    @keyframes pulse-btn {
+      0%, 100% { box-shadow: 0 12px 28px rgba(59, 130, 246, 0.35), 0 0 0 0 rgba(59, 130, 246, 0.4); }
+      50% { box-shadow: 0 14px 32px rgba(59, 130, 246, 0.4), 0 0 0 10px rgba(59, 130, 246, 0); }
+    }
+
+    .steps {
+      margin-top: 36px;
+      text-align: left;
+      background: rgba(59, 130, 246, 0.04);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px 28px;
+    }
+    .steps h3 {
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--navy);
+      margin-bottom: 16px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .step {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 8px 0;
+    }
+    .step-num {
+      flex-shrink: 0;
+      width: 26px;
+      height: 26px;
+      background: linear-gradient(135deg, var(--navy), var(--blue));
+      color: #fff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 800;
+    }
+    .step p {
+      font-size: 14px;
+      color: var(--text);
+      line-height: 1.5;
+      padding-top: 3px;
+    }
+    .step code {
+      background: rgba(15, 23, 42, 0.06);
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-family: 'SF Mono', Menlo, monospace;
+      font-size: 0.9em;
+    }
+
+    .support {
+      margin-top: 28px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .support a {
+      color: var(--blue);
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .brand-footer {
+      margin-top: 40px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 15px;
+      color: var(--navy);
+      opacity: 0.7;
+    }
+    .brand-footer img {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="card">
+      <div class="check-icon">
+        <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      </div>
+
+      <h1 id="title">Pago confirmado</h1>
+      <p class="subtitle" id="subtitle">Gracias por elegir Phantom. Tu descarga est&aacute; lista.</p>
+
+      <!-- ══════════════════════════════════════════════
+           IMPORTANTE: Reemplaz&aacute; el href con la URL real del .dmg
+           (GitHub Release, S3, Cloudflare R2, etc.)
+           ══════════════════════════════════════════════ -->
+      <a id="download-btn" class="download-btn" href="https://github.com/TU_USUARIO/Phantom-Desktop/releases/latest/download/Phantom.dmg">
+        <span>⬇</span>
+        <span id="btn-text">Descargar Phantom.dmg</span>
+      </a>
+
+      <div class="steps">
+        <h3 id="steps-title">Instalaci&oacute;n</h3>
+        <div class="step">
+          <div class="step-num">1</div>
+          <p id="step1">Abr&iacute; el archivo <code>Phantom.dmg</code> descargado</p>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <p id="step2">Arrastr&aacute; <strong>Phantom</strong> a la carpeta <strong>Applications</strong></p>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <p id="step3">Abrilo desde Applications. Sin warnings, firmado por Apple.</p>
+        </div>
+        <div class="step">
+          <div class="step-num">4</div>
+          <p id="step4">Permitile acceso en <strong>Configuraci&oacute;n del Sistema &rarr; Privacidad y seguridad &rarr; Grabaci&oacute;n de audio del sistema y pantalla</strong>. Activ&aacute; el toggle de <strong>Phantom</strong>.</p>
+        </div>
+      </div>
+
+      <p class="support" id="support">
+        &iquest;Problemas? Escrib&iacute;nos a <a href="mailto:support@phantom-download.online">support@phantom-download.online</a>
+      </p>
+    </div>
+
+    <div class="brand-footer">
+      <img src="img/icon.png" alt="Phantom" />
+      Phantom
+    </div>
+  </div>
+
+  <script>
+    // ─── Auto-detect language from browser or referrer ───
+    const TEXTS = {
+      es: {
+        title: 'Pago confirmado',
+        subtitle: 'Gracias por elegir Phantom. Tu descarga está lista.',
+        btn: 'Descargar Phantom.dmg',
+        stepsTitle: 'Instalación',
+        step1: 'Abrí el archivo <code>Phantom.dmg</code> descargado',
+        step2: 'Arrastrá <strong>Phantom</strong> a la carpeta <strong>Applications</strong>',
+        step3: 'Abrilo desde Applications. Sin warnings, firmado por Apple.',
+        step4: 'Permitile acceso en <strong>Configuración del Sistema → Privacidad y seguridad → Grabación de audio del sistema y pantalla</strong>. Activá el toggle de <strong>Phantom</strong>.',
+        support: '¿Problemas? Escribínos a <a href="mailto:support@phantom-download.online">support@phantom-download.online</a>'
+      },
+      en: {
+        title: 'Payment confirmed',
+        subtitle: 'Thanks for choosing Phantom. Your download is ready.',
+        btn: 'Download Phantom.dmg',
+        stepsTitle: 'Installation',
+        step1: 'Open the downloaded <code>Phantom.dmg</code> file',
+        step2: 'Drag <strong>Phantom</strong> to your <strong>Applications</strong> folder',
+        step3: 'Open it from Applications. No warnings, signed by Apple.',
+        step4: 'Grant access in <strong>System Settings → Privacy & Security → Screen & System Audio Recording</strong>. Toggle <strong>Phantom</strong> on.',
+        support: 'Need help? Contact us at <a href="mailto:support@phantom-download.online">support@phantom-download.online</a>'
+      },
+      pt: {
+        title: 'Pagamento confirmado',
+        subtitle: 'Obrigado por escolher o Phantom. Seu download está pronto.',
+        btn: 'Baixar Phantom.dmg',
+        stepsTitle: 'Instalação',
+        step1: 'Abra o arquivo <code>Phantom.dmg</code> baixado',
+        step2: 'Arraste <strong>Phantom</strong> para a pasta <strong>Applications</strong>',
+        step3: 'Abra-o em Applications. Sem avisos, assinado pela Apple.',
+        step4: 'Conceda acesso em <strong>Configurações do Sistema → Privacidade e Segurança → Gravação de áudio do sistema e tela</strong>. Ative o toggle de <strong>Phantom</strong>.',
+        support: 'Problemas? Entre em contato: <a href="mailto:support@phantom-download.online">support@phantom-download.online</a>'
+      },
+      fr: {
+        title: 'Paiement confirmé',
+        subtitle: 'Merci d’avoir choisi Phantom. Votre téléchargement est prêt.',
+        btn: 'Télécharger Phantom.dmg',
+        stepsTitle: 'Installation',
+        step1: 'Ouvrez le fichier <code>Phantom.dmg</code> téléchargé',
+        step2: 'Glissez <strong>Phantom</strong> dans le dossier <strong>Applications</strong>',
+        step3: 'Lancez-le depuis Applications. Aucun avertissement, signé par Apple.',
+        step4: "Autorisez l'accès dans <strong>Réglages du système → Confidentialité et sécurité → Enregistrement de l'écran et de l'audio</strong>. Activez le toggle de <strong>Phantom</strong>.",
+        support: 'Un problème ? Écrivez-nous à <a href="mailto:support@phantom-download.online">support@phantom-download.online</a>'
+      },
+      ja: {
+        title: 'お支払い完了',
+        subtitle: 'Phantom をお選びいただきありがとうございます。ダウンロード準備ができました。',
+        btn: 'Phantom.dmg をダウンロード',
+        stepsTitle: 'インストール',
+        step1: 'ダウンロードした <code>Phantom.dmg</code> を開く',
+        step2: '<strong>Phantom</strong> を <strong>Applications</strong> フォルダにドラッグ',
+        step3: 'Applications から起動。警告なし、Apple 署名済み。',
+        step4: '<strong>システム設定 → プライバシーとセキュリティ → 画面収録とシステムオーディオ</strong> でアクセスを許可。<strong>Phantom</strong> のトグルをオンに。',
+        support: '問題がありますか？ <a href="mailto:support@phantom-download.online">support@phantom-download.online</a> まで'
+      },
+      zh: {
+        title: '付款已确认',
+        subtitle: '感谢您选择 Phantom。您的下载已准备就绪。',
+        btn: '下载 Phantom.dmg',
+        stepsTitle: '安装',
+        step1: '打开下载的 <code>Phantom.dmg</code> 文件',
+        step2: '将 <strong>Phantom</strong> 拖入 <strong>Applications</strong> 文件夹',
+        step3: '从 Applications 打开。无警告，Apple 签名。',
+        step4: '在 <strong>系统设置 → 隐私与安全 → 屏幕与系统音频录制</strong> 中授权访问。开启 <strong>Phantom</strong> 的开关。',
+        support: '遇到问题？联系我们：<a href="mailto:support@phantom-download.online">support@phantom-download.online</a>'
+      }
+    };
+
+    function detectLang() {
+      // Check if landing stored a preference
+      const stored = localStorage.getItem('phantom_landing_lang');
+      if (stored && TEXTS[stored]) return stored;
+      const browser = (navigator.language || 'es').toLowerCase().split('-')[0];
+      return TEXTS[browser] ? browser : 'es';
+    }
+
+    const lang = detectLang();
+    const t = TEXTS[lang];
+    document.documentElement.lang = lang;
+    document.getElementById('title').textContent = t.title;
+    document.getElementById('subtitle').textContent = t.subtitle;
+    document.getElementById('btn-text').textContent = t.btn;
+    document.getElementById('steps-title').textContent = t.stepsTitle;
+    document.getElementById('step1').innerHTML = t.step1;
+    document.getElementById('step2').innerHTML = t.step2;
+    document.getElementById('step3').innerHTML = t.step3;
+    document.getElementById('step4').innerHTML = t.step4;
+    document.getElementById('support').innerHTML = t.support;
+
+    // ─── Google Analytics: track successful purchase ───
+    if (typeof gtag === 'function') {
+      gtag('event', 'purchase', {
+        currency: 'USD',
+        value: 9.99,
+        items: [{ item_name: 'Phantom Lifetime' }]
+      });
+    }
+
+    // Track download click
+    document.getElementById('download-btn').addEventListener('click', function() {
+      if (typeof gtag === 'function') {
+        gtag('event', 'file_download', {
+          file_name: 'Phantom.dmg',
+          link_url: this.href
+        });
+      }
+    });
+  </script>
+</body>
+</html>

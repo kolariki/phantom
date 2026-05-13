@@ -15,6 +15,8 @@ const fs = require('fs');
 const os = require('os');
 const https = require('https');
 const { execFile } = require('child_process');
+const WebSocket = require('ws');
+const crypto = require('crypto');
 
 // ─── Persistencia de configuración (JSON simple) ────────────────
 const CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
@@ -430,6 +432,279 @@ ipcMain.handle('translate:text', async (_e, { text, from, to }) => {
   return callAnthropic(cfg.apiKey, 'claude-haiku-4-5', system, messages, 200);
 });
 
+// ─── DEEPGRAM STREAMING (real-time transcription) ──────────────
+let dgSocket = null;
+
+ipcMain.handle('deepgram:start', async (_e, { language, sampleRate }) => {
+  const cfg = loadConfig();
+  const apiKey = cfg.deepgramKey;
+  if (!apiKey) throw new Error('Falta configurar Deepgram API key en settings.');
+
+  // Cerrar conexión anterior si existe
+  if (dgSocket && dgSocket.readyState === WebSocket.OPEN) {
+    try { dgSocket.send(JSON.stringify({ type: 'CloseStream' })); dgSocket.close(); } catch {}
+  }
+
+  const lang = (language && language !== 'auto') ? `&language=${language}` : '&detect_language=true';
+  const rate = sampleRate || 16000;
+  const url = `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=${rate}&channels=1&model=nova-2&interim_results=true&punctuate=true&endpointing=300${lang}`;
+
+  return new Promise((resolve, reject) => {
+    dgSocket = new WebSocket(url, {
+      headers: { Authorization: `Token ${apiKey}` }
+    });
+
+    const timeout = setTimeout(() => {
+      reject(new Error('Deepgram connection timeout (10s)'));
+      if (dgSocket) { try { dgSocket.close(); } catch {} dgSocket = null; }
+    }, 10000);
+
+    dgSocket.on('open', () => {
+      clearTimeout(timeout);
+      console.log('[Phantom] Deepgram WebSocket connected');
+      resolve({ connected: true });
+    });
+
+    dgSocket.on('message', (raw) => {
+      try {
+        const msg = JSON.parse(raw.toString());
+        if (msg.type !== 'Results') return;
+        const alt = msg.channel?.alternatives?.[0];
+        if (!alt) return;
+        const transcript = alt.transcript || '';
+        if (!transcript) return;
+
+        const win = BrowserWindow.getAllWindows()[0];
+        if (!win) return;
+
+        if (msg.is_final) {
+          win.webContents.send('deepgram:final', transcript, msg.speech_final || false);
+        } else {
+          win.webContents.send('deepgram:interim', transcript);
+        }
+      } catch (err) {
+        console.error('[Phantom] Deepgram parse error:', err);
+      }
+    });
+
+    dgSocket.on('error', (err) => {
+      clearTimeout(timeout);
+      console.error('[Phantom] Deepgram WS error:', err.message);
+      const win = BrowserWindow.getAllWindows()[0];
+      if (win) win.webContents.send('deepgram:error', err.message);
+    });
+
+    dgSocket.on('close', (code, reason) => {
+      clearTimeout(timeout);
+      console.log('[Phantom] Deepgram WS closed:', code, reason?.toString());
+      dgSocket = null;
+    });
+  });
+});
+
+ipcMain.on('deepgram:audio', (_e, int16Buffer) => {
+  if (dgSocket && dgSocket.readyState === WebSocket.OPEN) {
+    dgSocket.send(Buffer.from(int16Buffer));
+  }
+});
+
+ipcMain.handle('deepgram:stop', async () => {
+  if (dgSocket) {
+    try {
+      if (dgSocket.readyState === WebSocket.OPEN) {
+        dgSocket.send(JSON.stringify({ type: 'CloseStream' }));
+      }
+      dgSocket.close();
+    } catch {}
+    dgSocket = null;
+  }
+  return { stopped: true };
+});
+
+// ─── EXCHANGE APIs (KuCoin / Binance) ─────────────────────────
+// Helpers para firmar requests y hacer llamadas HTTPS
+
+function httpsJSON(hostname, path, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({ hostname, path, method: 'GET', headers }, (res) => {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          return reject(new Error(`HTTP ${res.statusCode}: ${text.slice(0, 300)}`));
+        }
+        try { resolve(JSON.parse(text)); } catch (e) { reject(e); }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(15000, () => { req.destroy(); reject(new Error('Request timeout')); });
+    req.end();
+  });
+}
+
+// KuCoin signature: HMAC-SHA256(timestamp + method + path + body, secret) → base64
+function kucoinSign(secret, timestamp, method, path, body) {
+  const what = timestamp + method.toUpperCase() + path + (body || '');
+  return crypto.createHmac('sha256', secret).update(what).digest('base64');
+}
+
+function kucoinHeaders(cfg, method, path, body) {
+  const timestamp = Date.now().toString();
+  const sign = kucoinSign(cfg.exchangeSecret, timestamp, method, path, body || '');
+  const passphrase = crypto.createHmac('sha256', cfg.exchangeSecret)
+    .update(cfg.exchangePassphrase || '').digest('base64');
+  return {
+    'KC-API-KEY': cfg.exchangeKey,
+    'KC-API-SIGN': sign,
+    'KC-API-TIMESTAMP': timestamp,
+    'KC-API-PASSPHRASE': passphrase,
+    'KC-API-KEY-VERSION': '2',
+    'Content-Type': 'application/json'
+  };
+}
+
+// Binance signature: HMAC-SHA256(querystring, secret) → hex
+function binanceSign(secret, queryString) {
+  return crypto.createHmac('sha256', secret).update(queryString).digest('hex');
+}
+
+ipcMain.handle('exchange:fetch', async (_e, { type }) => {
+  const cfg = loadConfig();
+  const exchange = cfg.exchangeProvider || 'kucoin';
+
+  if (!cfg.exchangeKey || !cfg.exchangeSecret) {
+    throw new Error('Falta configurar API key del exchange en settings.');
+  }
+
+  if (exchange === 'kucoin') {
+    return fetchKuCoin(cfg, type);
+  } else if (exchange === 'binance') {
+    return fetchBinance(cfg, type);
+  }
+  throw new Error('Exchange no soportado: ' + exchange);
+});
+
+async function fetchKuCoin(cfg, type) {
+  const results = {};
+  const asset = cfg.tradingAsset || '';
+  const symbol = asset.replace('/', '-').toUpperCase(); // BTC/USDT → BTC-USDT
+
+  try {
+    if (type === 'all' || type === 'ticker') {
+      if (symbol) {
+        // Intentar futures primero, luego spot
+        try {
+          const futures = await httpsJSON('api-futures.kucoin.com', `/api/v1/ticker?symbol=${symbol}M`);
+          results.ticker = futures.data;
+          results.tickerSource = 'futures';
+        } catch {
+          const spot = await httpsJSON('api.kucoin.com', `/api/v1/market/orderbook/level1?symbol=${symbol}`);
+          results.ticker = spot.data;
+          results.tickerSource = 'spot';
+        }
+      }
+    }
+
+    if (type === 'all' || type === 'positions') {
+      const path = '/api/v1/positions';
+      const headers = kucoinHeaders(cfg, 'GET', path);
+      const pos = await httpsJSON('api-futures.kucoin.com', path, headers);
+      results.positions = (pos.data || []).filter(p => p.isOpen);
+    }
+
+    if (type === 'all' || type === 'orders') {
+      const path = '/api/v1/orders?status=active';
+      const headers = kucoinHeaders(cfg, 'GET', path);
+      // Intentar futures
+      try {
+        const orders = await httpsJSON('api-futures.kucoin.com', path, headers);
+        results.orders = orders.data?.items || [];
+        results.ordersSource = 'futures';
+      } catch {
+        const spotPath = '/api/v1/orders?status=active';
+        const spotHeaders = kucoinHeaders(cfg, 'GET', spotPath);
+        const orders = await httpsJSON('api.kucoin.com', spotPath, spotHeaders);
+        results.orders = orders.data?.items || [];
+        results.ordersSource = 'spot';
+      }
+    }
+
+    if (type === 'all' || type === 'balance') {
+      const path = '/api/v1/account-overview';
+      const headers = kucoinHeaders(cfg, 'GET', path);
+      try {
+        const bal = await httpsJSON('api-futures.kucoin.com', path, headers);
+        results.balance = bal.data;
+        results.balanceSource = 'futures';
+      } catch {
+        const spotPath = '/api/v1/accounts';
+        const spotHeaders = kucoinHeaders(cfg, 'GET', spotPath);
+        const bal = await httpsJSON('api.kucoin.com', spotPath, spotHeaders);
+        results.balance = bal.data;
+        results.balanceSource = 'spot';
+      }
+    }
+  } catch (err) {
+    results.error = err.message;
+  }
+
+  return results;
+}
+
+async function fetchBinance(cfg, type) {
+  const results = {};
+  const asset = cfg.tradingAsset || '';
+  const symbol = asset.replace('/', '').toUpperCase(); // BTC/USDT → BTCUSDT
+
+  try {
+    if (type === 'all' || type === 'ticker') {
+      if (symbol) {
+        try {
+          const ticker = await httpsJSON('fapi.binance.com', `/fapi/v1/ticker/price?symbol=${symbol}`);
+          results.ticker = ticker;
+          results.tickerSource = 'futures';
+        } catch {
+          const ticker = await httpsJSON('api.binance.com', `/api/v3/ticker/price?symbol=${symbol}`);
+          results.ticker = ticker;
+          results.tickerSource = 'spot';
+        }
+      }
+    }
+
+    if (type === 'all' || type === 'positions') {
+      const ts = Date.now().toString();
+      const qs = `timestamp=${ts}`;
+      const sig = binanceSign(cfg.exchangeSecret, qs);
+      const path = `/fapi/v2/positionRisk?${qs}&signature=${sig}`;
+      const pos = await httpsJSON('fapi.binance.com', path, { 'X-MBX-APIKEY': cfg.exchangeKey });
+      results.positions = (pos || []).filter(p => parseFloat(p.positionAmt) !== 0);
+    }
+
+    if (type === 'all' || type === 'orders') {
+      const ts = Date.now().toString();
+      const qs = symbol ? `symbol=${symbol}&timestamp=${ts}` : `timestamp=${ts}`;
+      const sig = binanceSign(cfg.exchangeSecret, qs);
+      const path = `/fapi/v1/openOrders?${qs}&signature=${sig}`;
+      const orders = await httpsJSON('fapi.binance.com', path, { 'X-MBX-APIKEY': cfg.exchangeKey });
+      results.orders = orders || [];
+    }
+
+    if (type === 'all' || type === 'balance') {
+      const ts = Date.now().toString();
+      const qs = `timestamp=${ts}`;
+      const sig = binanceSign(cfg.exchangeSecret, qs);
+      const path = `/fapi/v2/balance?${qs}&signature=${sig}`;
+      const bal = await httpsJSON('fapi.binance.com', path, { 'X-MBX-APIKEY': cfg.exchangeKey });
+      results.balance = (bal || []).filter(b => parseFloat(b.balance) > 0);
+    }
+  } catch (err) {
+    results.error = err.message;
+  }
+
+  return results;
+}
+
 // ─── INTERVIEW MODE: contestar como el usuario ──────────────────
 // Recibe la pregunta detectada y devuelve la respuesta como si fuera el usuario,
 // usando el CV/contexto guardados en la config.
@@ -518,6 +793,61 @@ ipcMain.handle('file:read-text', async (_e, filePath) => {
   }
 });
 
+// Picker NATIVO de macOS + extracción de texto (PDF / DOCX / TXT / MD)
+ipcMain.handle('file:pick-and-extract-cv', async () => {
+  const { dialog } = require('electron');
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Cargar CV',
+    properties: ['openFile'],
+    filters: [
+      { name: 'CV / Resume', extensions: ['pdf', 'docx', 'txt', 'md'] },
+      { name: 'PDF', extensions: ['pdf'] },
+      { name: 'Word', extensions: ['docx'] },
+      { name: 'Texto', extensions: ['txt', 'md'] }
+    ]
+  });
+
+  if (result.canceled || !result.filePaths.length) {
+    return { canceled: true };
+  }
+
+  const filePath = result.filePaths[0];
+  const filename = path.basename(filePath);
+  const ext = path.extname(filePath).toLowerCase();
+  const buf = fs.readFileSync(filePath);
+
+  if (buf.length > 10 * 1024 * 1024) {
+    throw new Error('Archivo demasiado grande (>10 MB)');
+  }
+
+  try {
+    if (ext === '.txt' || ext === '.md') {
+      return { filename, text: buf.toString('utf8') };
+    }
+
+    if (ext === '.pdf') {
+      const pdfParse = require('pdf-parse');
+      const data = await pdfParse(buf);
+      return { filename, text: (data.text || '').trim() };
+    }
+
+    if (ext === '.docx') {
+      const mammoth = require('mammoth');
+      const data = await mammoth.extractRawText({ buffer: buf });
+      return { filename, text: (data.value || '').trim() };
+    }
+
+    if (ext === '.doc') {
+      throw new Error('El formato .doc legacy no es soportado. Guardá como .docx y reintentá.');
+    }
+
+    throw new Error('Tipo de archivo no soportado: ' + ext);
+  } catch (err) {
+    console.error('[file:pick-and-extract-cv]', err);
+    throw new Error('No pude leer el archivo: ' + err.message);
+  }
+});
+
 // Helper para que el renderer pueda consultar el estado del permiso
 ipcMain.handle('permissions:screen', () => {
   if (process.platform !== 'darwin') return 'granted';
@@ -533,11 +863,14 @@ ipcMain.handle('ai:call', async (_e, payload) => {
   const cfg = loadConfig();
   if (!cfg.apiKey) throw new Error('Falta configurar la API key.');
 
-  const { messages, system } = payload;
+  const { messages, system, model: overrideModel, maxTokens } = payload;
+  const tokens = maxTokens || 1500;
   if (cfg.provider === 'openai') {
-    return callOpenAI(cfg.apiKey, cfg.model || 'gpt-4o-mini', system, messages);
+    const m = overrideModel || cfg.model || 'gpt-4o-mini';
+    return callOpenAI(cfg.apiKey, m, system, messages, tokens);
   }
-  return callAnthropic(cfg.apiKey, cfg.model || 'claude-haiku-4-5', system, messages);
+  const m = overrideModel || cfg.model || 'claude-haiku-4-5';
+  return callAnthropic(cfg.apiKey, m, system, messages, tokens);
 });
 
 function httpsJSON(url, options, body) {

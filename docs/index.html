@@ -1,12 +1,24 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-F39C6BPJJS"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-F39C6BPJJS');
+  </script>
+
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Phantom — The AI nobody sees but you</title>
   <meta name="description" content="Copiloto IA invisible para macOS. Lee tu pantalla, contesta y desaparece de cualquier screen-share." />
   <meta property="og:title" content="Phantom — The AI nobody sees but you" />
   <meta property="og:description" content="Invisible AI copilot for macOS. Reads your screen, answers anything, hides from screen-share." />
+  <meta property="og:url" content="https://www.phantom-download.online" />
+  <meta property="og:type" content="website" />
+  <link rel="canonical" href="https://www.phantom-download.online/" />
   <link rel="icon" type="image/png" href="img/icon.png" />
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -20,8 +32,8 @@
     </a>
     <nav class="topnav">
       <a href="#features" data-i18n="nav.features">Features</a>
-      <a href="#download" data-i18n="nav.download">Download</a>
-      <a href="https://github.com/kolariki/phantom" target="_blank">GitHub</a>
+      <a href="#demos" data-i18n="nav.demos">Demos</a>
+      <a href="#pricing" data-i18n="nav.pricing">Pricing</a>
     </nav>
     <select class="lang-select" id="lang-select">
       <option value="es">🇪🇸 Español</option>
@@ -40,83 +52,211 @@
       <h1 data-i18n-html="hero.title">El copiloto de IA<br/>que solo <em>vos</em> ves.</h1>
       <p class="lead" data-i18n-html="hero.lead">Lee tu pantalla, te dicta la respuesta a cualquier pregunta…</p>
       <div class="cta-row">
-        <a href="https://github.com/kolariki/phantom/releases/latest/download/Phantom-1.1.0-arm64.dmg" class="btn-primary">
+        <a href="https://buy.stripe.com/8x2dRa4MD7cha8xaRt0Fi0n" target="_blank" class="btn-primary">
           <span>⬇</span>
-          <span data-i18n="hero.download_btn">Descargar para macOS</span>
+          <span data-i18n-html="hero.buy_btn">Conseguir Phantom — <strong>$9.99</strong></span>
         </a>
-        <a href="https://github.com/kolariki/phantom/releases" class="btn-link" data-i18n="hero.see_releases">Ver todas las versiones →</a>
+        <a href="#pricing" class="btn-link" data-i18n="hero.see_pricing">Ver qué incluye →</a>
       </div>
       <div class="meta">
-        <span data-i18n="hero.meta_signed">✓ Firmado y notarizado por Apple</span>
+        <span data-i18n="hero.meta_lifetime">✓ Pago único · Lifetime</span>
+        <span class="dot-sep">·</span>
+        <span data-i18n="hero.meta_signed">Firmado por Apple</span>
         <span class="dot-sep">·</span>
         <span data-i18n="hero.meta_macos">macOS 11+</span>
-        <span class="dot-sep">·</span>
-        <span data-i18n="hero.meta_free">Gratis · Open source</span>
       </div>
     </div>
   </section>
 
-  <!-- ─── Annotated screenshot ─────────────────────────── -->
+  <!-- ─── Annotated screenshots ────────────────────────── -->
   <section class="mockup-section" id="features">
     <h2 data-i18n="mockup.title">Todo lo que Phantom puede hacer</h2>
     <p class="subtitle" data-i18n="mockup.subtitle">Pasá el mouse por cada feature para destacarla en la imagen.</p>
 
-    <div class="stage">
+    <!-- ═══ STAGE 1: Funcionalidades principales ═══ -->
+    <div class="stage" data-stage="1">
 
       <!-- LEFT LABELS -->
       <div class="label-col label-col-left">
-        <div class="feat" data-feat="read-screen">
+        <div class="feat" data-feat="read-screen" data-stage="1">
           <h4 data-i18n="feat.read_screen.title">📄 Leer pantalla</h4>
           <p data-i18n="feat.read_screen.desc">Captura lo que ves y te lo resume con IA.</p>
         </div>
-        <div class="feat" data-feat="interview">
+        <div class="feat" data-feat="interview" data-stage="1">
           <h4 data-i18n="feat.interview.title">🎓 Modo Entrevista</h4>
           <p data-i18n="feat.interview.desc">Escucha al entrevistador y te dicta la respuesta usando tu CV.</p>
         </div>
-        <div class="feat" data-feat="language">
-          <h4 data-i18n="feat.language.title">🌐 6 idiomas</h4>
-          <p data-i18n="feat.language.desc">UI en español, inglés, portugués, francés, japonés y chino.</p>
+        <div class="feat" data-feat="translate" data-stage="1">
+          <h4 data-i18n="feat.translate.title">🎙️ Traducción en vivo</h4>
+          <p data-i18n="feat.translate.desc">Audio del sistema → Whisper → traducción en tiempo real.</p>
         </div>
-        <div class="feat" data-feat="apikey">
-          <h4 data-i18n="feat.apikey.title">🔑 API Key con instructivo</h4>
-          <p data-i18n="feat.apikey.desc">Guía paso a paso integrada para obtener tu API key.</p>
+        <div class="feat" data-feat="trading" data-stage="1">
+          <h4 data-i18n="feat.trading.title">📈 Trading con IA</h4>
+          <p data-i18n="feat.trading.desc">Análisis técnico profesional con indicadores, patrones y conexión a tu exchange en vivo.</p>
         </div>
-        <div class="feat" data-feat="stealth">
+        <div class="feat" data-feat="stealth" data-stage="1">
           <h4 data-i18n="feat.stealth.title">🥷 Invisible al screen-share</h4>
           <p data-i18n-html="feat.stealth.desc">No se ve en Zoom, Meet, Teams, OBS ni en screenshots.</p>
         </div>
       </div>
 
-      <!-- CENTER: screenshot real con spotlight overlay -->
-      <div class="screenshot-wrap" id="screenshot-wrap">
-        <img src="img/phantom-screenshot.png" alt="Phantom interface" id="phantom-img" />
-        <div class="spotlight" id="spotlight"></div>
+      <!-- CENTER: screenshot funcionalidades -->
+      <div class="screenshot-wrap" id="screenshot-wrap-1">
+        <img src="img/screen-funcionalidades.png" alt="Phantom — funcionalidades" />
+        <div class="spotlight" id="spotlight-1"></div>
       </div>
 
       <!-- RIGHT LABELS -->
       <div class="label-col label-col-right">
-        <div class="feat" data-feat="answer">
+        <div class="feat" data-feat="answer" data-stage="1">
           <h4 data-i18n="feat.answer.title">💡 Contestar</h4>
           <p data-i18n="feat.answer.desc">Detecta preguntas o quizzes visibles y los resuelve.</p>
         </div>
-        <div class="feat" data-feat="record">
+        <div class="feat" data-feat="record" data-stage="1">
           <h4 data-i18n="feat.record.title">🔴 Grabar manual</h4>
           <p data-i18n="feat.record.desc">Grabás vos cuando querés, y después pedís la respuesta.</p>
         </div>
-        <div class="feat" data-feat="translate">
-          <h4 data-i18n="feat.translate.title">🎙️ Traducción en vivo</h4>
-          <p data-i18n="feat.translate.desc">Audio del sistema → Whisper → traducción en tiempo real.</p>
+        <div class="feat" data-feat="language" data-stage="1">
+          <h4 data-i18n="feat.language.title">🌐 6 idiomas</h4>
+          <p data-i18n="feat.language.desc">UI en español, inglés, portugués, francés, japonés y chino.</p>
         </div>
-        <div class="feat" data-feat="opacity">
+        <div class="feat" data-feat="opacity" data-stage="1">
           <h4 data-i18n="feat.opacity.title">◐ Translucidez</h4>
           <p data-i18n="feat.opacity.desc">Ajustá la opacidad para ver lo que hay detrás.</p>
         </div>
-        <div class="feat" data-feat="hotkey">
+        <div class="feat" data-feat="hotkey" data-stage="1">
           <h4 data-i18n="feat.hotkey.title">⌨️ Atajos globales</h4>
           <p data-i18n-html="feat.hotkey.desc">Ocultá / mostrá / analizá desde cualquier app.</p>
         </div>
       </div>
     </div>
+
+    <!-- ═══ STAGE 2: Trading, Exchange & Entrevista (settings) ═══ -->
+    <h2 class="stage2-title" data-i18n="mockup.title2">Configuración avanzada</h2>
+    <p class="subtitle" data-i18n="mockup.subtitle2">Trading con exchange en vivo, entrevistas con tu CV y más.</p>
+
+    <div class="stage" data-stage="2">
+
+      <!-- LEFT LABELS -->
+      <div class="label-col label-col-left">
+        <div class="feat" data-feat="trading-enable" data-stage="2">
+          <h4 data-i18n="feat.trading_enable.title">📈 Activar Trading</h4>
+          <p data-i18n="feat.trading_enable.desc">Habilitá el módulo de trading y elegí el modelo de IA dedicado.</p>
+        </div>
+        <div class="feat" data-feat="exchange" data-stage="2">
+          <h4 data-i18n="feat.exchange.title">🔗 Exchange en vivo</h4>
+          <p data-i18n="feat.exchange.desc">Conectá KuCoin o Binance para que el análisis incluya tus posiciones, órdenes y balance real.</p>
+        </div>
+        <div class="feat" data-feat="interview-cv" data-stage="2">
+          <h4 data-i18n="feat.interview_cv.title">📝 Tu CV / Experiencia</h4>
+          <p data-i18n="feat.interview_cv.desc">Pegá tu CV completo y Phantom responde usando tu perfil real.</p>
+        </div>
+      </div>
+
+      <!-- CENTER: screenshot trading/settings -->
+      <div class="screenshot-wrap" id="screenshot-wrap-2">
+        <img src="img/screen-trading.png" alt="Phantom — trading y configuración" />
+        <div class="spotlight" id="spotlight-2"></div>
+      </div>
+
+      <!-- RIGHT LABELS -->
+      <div class="label-col label-col-right">
+        <div class="feat" data-feat="trading-model" data-stage="2">
+          <h4 data-i18n="feat.trading_model.title">🧠 Modelo dedicado</h4>
+          <p data-i18n="feat.trading_model.desc">Usá Claude Sonnet 4 u Opus 4 solo para trading, sin encarecer las operaciones normales.</p>
+        </div>
+        <div class="feat" data-feat="interview-setup" data-stage="2">
+          <h4 data-i18n="feat.interview_setup.title">🎓 Setup de Entrevista</h4>
+          <p data-i18n="feat.interview_setup.desc">Configurá contexto, estilo de respuesta e idioma. Subí tu CV en PDF, DOCX o TXT.</p>
+        </div>
+        <div class="feat" data-feat="save-btn" data-stage="2">
+          <h4 data-i18n="feat.save_btn.title">💾 Guardar</h4>
+          <p data-i18n="feat.save_btn.desc">Un click y toda la configuración se persiste. Listo para usar.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── Video Demos ────────────────────────────────────── -->
+  <section class="demos-section" id="demos">
+    <h2 data-i18n="demos.title">Miralo en acción</h2>
+    <p class="subtitle" data-i18n="demos.subtitle">Tres demos reales mostrando lo que Phantom puede hacer.</p>
+
+    <div class="demos-grid">
+
+      <!-- Demo 1: Code / Answer -->
+      <div class="demo-card">
+        <div class="demo-video-wrap">
+          <video src="vids/code-answer.mov" controls playsinline preload="metadata" poster=""></video>
+        </div>
+        <div class="demo-info">
+          <h3 data-i18n="demos.answer.title">💡 Respuestas inteligentes en vivo</h3>
+          <p data-i18n="demos.answer.desc">Phantom lee tu pantalla, detecta preguntas de código o exámenes y te da la respuesta correcta con explicación al instante. Funciona con cualquier lenguaje y cualquier formato.</p>
+        </div>
+      </div>
+
+      <!-- Demo 2: Trading -->
+      <div class="demo-card">
+        <div class="demo-video-wrap">
+          <video src="vids/vid-trading.mov" controls playsinline preload="metadata" poster=""></video>
+        </div>
+        <div class="demo-info">
+          <h3 data-i18n="demos.trading.title">📈 Análisis de trading con IA</h3>
+          <p data-i18n="demos.trading.desc">Conectá tu exchange (KuCoin, Binance), seleccioná tus indicadores técnicos y dejá que la IA analice el gráfico como un trader profesional. Te da entradas, salidas, stop loss y probabilidades.</p>
+        </div>
+      </div>
+
+      <!-- Demo 3: Translation -->
+      <div class="demo-card">
+        <div class="demo-video-wrap">
+          <video src="vids/traduccion-vid.mov" controls playsinline preload="metadata" poster=""></video>
+        </div>
+        <div class="demo-info">
+          <h3 data-i18n="demos.translate.title">🎙️ Traducción en tiempo real</h3>
+          <p data-i18n="demos.translate.desc">Capta el audio de cualquier videollamada, podcast o video y lo traduce en vivo. Subtítulos en tiempo real con Deepgram + traducción inteligente con IA.</p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ─── Pricing ──────────────────────────────────────── -->
+  <section class="pricing-section" id="pricing">
+    <h2 data-i18n="pricing.title">Un precio. Todo incluido. Para siempre.</h2>
+    <p class="subtitle" data-i18n="pricing.subtitle">Sin suscripciones. Sin trucos. Pagás una vez y es tuyo.</p>
+
+    <div class="price-card">
+      <div class="price-badge" data-i18n="pricing.badge">⭐ Lanzamiento</div>
+      <h3 data-i18n="pricing.plan_name">Phantom Lifetime</h3>
+      <div class="price-amount">
+        <span class="price-currency">$</span>
+        <span class="price-number">9.99</span>
+        <span class="price-once" data-i18n="pricing.once">una sola vez</span>
+      </div>
+      <ul class="price-features">
+        <li data-i18n="pricing.f1">📄 Leer pantalla con IA — ilimitado</li>
+        <li data-i18n="pricing.f2">💡 Contestar preguntas / quizzes / exámenes</li>
+        <li data-i18n="pricing.f3">🎓 Modo Entrevista con tu CV</li>
+        <li data-i18n="pricing.f4">🎙️ Traducción en vivo (6 idiomas)</li>
+        <li data-i18n="pricing.f4b">📈 Análisis de trading con IA + exchange en vivo</li>
+        <li data-i18n="pricing.f5">🥷 Invisible al screen-share (Zoom, Meet, Teams)</li>
+        <li data-i18n="pricing.f6">◐ Translucidez ajustable</li>
+        <li data-i18n="pricing.f7">🔄 Updates de por vida</li>
+        <li data-i18n="pricing.f8">💬 Soporte prioritario</li>
+      </ul>
+      <a href="https://buy.stripe.com/8x2dRa4MD7cha8xaRt0Fi0n" target="_blank" class="btn-primary big pricing-btn">
+        <span>⬇</span>
+        <span data-i18n-html="pricing.buy_btn">Conseguir Phantom — <strong>$9.99</strong></span>
+      </a>
+      <div class="price-trust">
+        <span data-i18n="pricing.trust_pay">🔒 Pago seguro vía Stripe</span>
+        <span class="dot-sep">·</span>
+        <span data-i18n="pricing.trust_signed">✓ App firmada por Apple</span>
+        <span class="dot-sep">·</span>
+        <span data-i18n="pricing.trust_refund">↩️ 30 días de garantía</span>
+      </div>
+    </div>
+
   </section>
 
   <!-- ─── Atajos ───────────────────────────────────────── -->
@@ -145,17 +285,17 @@
 
   <!-- ─── Final CTA ────────────────────────────────────── -->
   <section class="cta" id="download">
-    <h2 data-i18n="cta.title">Probalo ahora</h2>
-    <p data-i18n="cta.subtitle">Descarga directa. Sin registro. Sin tracking.</p>
-    <a href="https://github.com/kolariki/phantom/releases/latest/download/Phantom-1.1.0-arm64.dmg" class="btn-primary big">
+    <h2 data-i18n="cta.title">Conseguilo ahora</h2>
+    <p data-i18n="cta.subtitle">Pago único de $9.99 · Descarga instantánea · Lifetime updates</p>
+    <a href="https://buy.stripe.com/8x2dRa4MD7cha8xaRt0Fi0n" target="_blank" class="btn-primary big">
       <span>⬇</span>
-      <span data-i18n="cta.btn">Descargar Phantom 1.1.0</span>
+      <span data-i18n-html="cta.btn">Conseguir Phantom — <strong>$9.99</strong></span>
     </a>
-    <p class="install-note" data-i18n-html="cta.note">Doble click al <code>.dmg</code> → arrastrar a Applications → doble click. Sin warnings, firmado por Apple.</p>
+    <p class="install-note" data-i18n-html="cta.note">Pago vía Stripe → recibís el link de descarga al instante. Doble click al <code>.dmg</code> → arrastrar a Applications. Sin warnings, firmado por Apple.</p>
   </section>
 
   <footer>
-    <div>© 2026 Phantom · <a href="https://github.com/kolariki/phantom">GitHub</a></div>
+    <div>© 2026 Phantom</div>
     <div data-i18n="footer.tagline">The AI nobody sees but you.</div>
   </footer>
 

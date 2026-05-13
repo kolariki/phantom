@@ -20,30 +20,56 @@ const state = {
   mode: 'responder'
 };
 
-// ─── System prompts ──────────────────────────────────────────────
-const LANG_RULE = `IDIOMA: Detectá el idioma del contenido visible en la captura (o de la pregunta del usuario si es seguimiento) y respondé SIEMPRE en ese mismo idioma. No traduzcas.`;
+// ─── System prompts (dinámicos según idioma de la UI) ───────────
+const LANG_NAMES = {
+  es: 'Spanish', en: 'English', pt: 'Portuguese',
+  fr: 'French',  ja: 'Japanese', zh: 'Chinese'
+};
 
-const SECURITY_RULE = `SEGURIDAD: Si detectás phishing, estafa, fraude o engaño, comenzá tu respuesta con el marcador en una línea sola:
+const SECURITY_RULE = `SECURITY: If you detect phishing, scam, fraud or deception, begin your reply with the marker on a line by itself:
 [[PHISHING_DETECTED]]
-y luego explicá brevemente por qué, qué hacer (no clickear, eliminar, bloquear, reportar) y qué señales lo delatan.`;
+then briefly explain why, what to do (don't click, delete, block, report) and the warning signs.`;
 
-const SYS_RESUMEN = `You are an assistant that receives a screenshot of the user's screen and returns a clear, concise summary.
+function getSystemPrompt(action) {
+  // El idioma viene del selector de UI (i18n.js → getLanguage())
+  const uiLang = (typeof getLanguage === 'function') ? getLanguage() : 'es';
+  const langName = LANG_NAMES[uiLang] || 'Spanish';
+
+  const langRule = `🌐 LANGUAGE — CRITICAL: Reply ALWAYS in ${langName} (${uiLang}), regardless of what language is shown in the screenshot or the user's previous messages. The user's app interface is set to ${langName}, so they expect responses in ${langName}.`;
+
+  if (action === 'resumir') {
+    return `You are an assistant that receives a screenshot of the user's screen and returns a clear, concise summary.
 Structure: central topic (1 sentence), key points (3-5 bullets), conclusion if applicable.
 Don't make up data.
 
-${LANG_RULE}
+${langRule}
 
 ${SECURITY_RULE}`;
-
-const SYS_RESPONDER = `You are an expert assistant that receives a screenshot of the user's screen and must answer or solve what is shown.
+  }
+  return `You are an expert assistant that receives a screenshot of the user's screen and must answer or solve what is shown.
 If there's an explicit question, answer directly.
 If there's a problem (exercise, calculation, code, decision), solve it step by step.
 If there are multiple-choice options, indicate the correct one and why.
 Don't pad. If info is missing to solve, say so.
 
-${LANG_RULE}
+${langRule}
 
 ${SECURITY_RULE}`;
+}
+
+// User prompts (también en el idioma de la UI para no contaminar al modelo con español)
+function getUserPrompt(action) {
+  const uiLang = (typeof getLanguage === 'function') ? getLanguage() : 'es';
+  const prompts = {
+    es: { resumir: 'Resumí lo que se ve en esta captura.', responder: 'Identificá la pregunta o problema visible en esta captura y resolvelo.' },
+    en: { resumir: 'Summarize what is shown in this screenshot.', responder: 'Identify the question or problem visible in this screenshot and solve it.' },
+    pt: { resumir: 'Resuma o que está visível nesta captura.', responder: 'Identifique a pergunta ou problema visível nesta captura e resolva.' },
+    fr: { resumir: "Résumez ce qui est visible dans cette capture d'écran.", responder: "Identifiez la question ou le problème visible dans cette capture d'écran et résolvez-le." },
+    ja: { resumir: 'このスクリーンショットに表示されている内容を要約してください。', responder: 'このスクリーンショットに表示されている質問または問題を特定し、解決してください。' },
+    zh: { resumir: '总结此截图中显示的内容。', responder: '识别此截图中的问题并解决它。' }
+  };
+  return (prompts[uiLang] || prompts.es)[action];
+}
 
 // ─── Init ────────────────────────────────────────────────────────
 (async () => {
@@ -63,6 +89,7 @@ ${SECURITY_RULE}`;
     updateOpacityUI(cfg.windowOpacity);
   }
   $('cfg-translate').checked = !!cfg.translateEnabled;
+  $('cfg-deepgram-key').value = cfg.deepgramKey || '';
   $('cfg-openai-key').value = cfg.openaiKey || '';
   $('cfg-translate-from').value = cfg.translateFrom || 'auto';
   $('cfg-translate-to').value = cfg.translateTo || 'es';
@@ -72,8 +99,17 @@ ${SECURITY_RULE}`;
   $('cfg-interview-context').value = cfg.interviewContext || '';
   $('cfg-interview-style').value = cfg.interviewStyle || 'complete';
   $('cfg-interview-language').value = cfg.interviewLanguage || 'auto';
+  // Trading
+  $('cfg-trading').checked = !!cfg.tradingEnabled;
+  $('cfg-trading-model').value = cfg.tradingModel || '';
+  $('cfg-exchange-provider').value = cfg.exchangeProvider || '';
+  $('cfg-exchange-key').value = cfg.exchangeKey || '';
+  $('cfg-exchange-secret').value = cfg.exchangeSecret || '';
+  $('cfg-exchange-passphrase').value = cfg.exchangePassphrase || '';
+  updateExchangeKeysVisibility(cfg.exchangeProvider || '');
   applyTranslatePanelVisibility(!!cfg.translateEnabled);
   applyInterviewPanelVisibility(!!cfg.interviewEnabled);
+  applyTradingPanelVisibility(!!cfg.tradingEnabled);
   updateTranslateLangLabel();
   await phantom.window.setContentProtection(cfg.stealth !== false);
   if (!cfg.apiKey) {
@@ -133,6 +169,7 @@ $('cfg-save').addEventListener('click', async () => {
     apiKey: $('cfg-apikey').value.trim(),
     model: $('cfg-model').value.trim() || 'claude-haiku-4-5',
     stealth: $('cfg-stealth').checked,
+    deepgramKey: $('cfg-deepgram-key').value.trim(),
     openaiKey: $('cfg-openai-key').value.trim(),
     translateEnabled: $('cfg-translate').checked,
     translateFrom: $('cfg-translate-from').value,
@@ -141,12 +178,19 @@ $('cfg-save').addEventListener('click', async () => {
     interviewCV: $('cfg-interview-cv').value.trim(),
     interviewContext: $('cfg-interview-context').value.trim(),
     interviewStyle: $('cfg-interview-style').value,
-    interviewLanguage: $('cfg-interview-language').value
+    interviewLanguage: $('cfg-interview-language').value,
+    tradingEnabled: $('cfg-trading').checked,
+    tradingModel: $('cfg-trading-model').value,
+    exchangeProvider: $('cfg-exchange-provider').value,
+    exchangeKey: $('cfg-exchange-key').value.trim(),
+    exchangeSecret: $('cfg-exchange-secret').value.trim(),
+    exchangePassphrase: $('cfg-exchange-passphrase').value.trim()
   };
   await phantom.config.set(cfg);
   await phantom.window.setContentProtection(cfg.stealth);
   applyTranslatePanelVisibility(cfg.translateEnabled);
   applyInterviewPanelVisibility(cfg.interviewEnabled);
+  applyTradingPanelVisibility(cfg.tradingEnabled);
   updateTranslateLangLabel();
   setStatus('Configuración guardada.', 'ok');
 });
@@ -155,23 +199,24 @@ $('cfg-interview').addEventListener('change', (e) => {
   applyInterviewPanelVisibility(e.target.checked);
 });
 
-// Cargar CV desde archivo
+// Cargar CV desde archivo (PDF / DOCX / TXT / MD) via dialog nativo de macOS
 $('cfg-upload-cv').addEventListener('click', async () => {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = '.txt,.md,text/plain,text/markdown';
-  input.onchange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    try {
-      const text = await file.text();
-      $('cfg-interview-cv').value = text;
-      setStatus(`✓ Cargado: ${file.name} (${(text.length / 1024).toFixed(1)} KB)`, 'ok');
-    } catch (err) {
-      setStatus('⚠ ' + err.message, 'err');
+  try {
+    setStatus(t('status.parsing_cv'), 'busy');
+    const result = await phantom.interview.pickCV();
+    if (result && result.canceled) {
+      setStatus(t('status.initial'), 'ok');
+      return;
     }
-  };
-  input.click();
+    if (!result || !result.text) {
+      throw new Error('No se pudo extraer texto del archivo.');
+    }
+    $('cfg-interview-cv').value = result.text;
+    const kb = (result.text.length / 1024).toFixed(1);
+    setStatus(`✓ ${result.filename} — ${kb} KB`, 'ok');
+  } catch (err) {
+    setStatus('⚠ ' + err.message, 'err');
+  }
 });
 
 $('cfg-translate').addEventListener('change', (e) => {
@@ -238,16 +283,47 @@ phantom.on('opacity:changed', (val) => updateOpacityUI(val));
 document.querySelectorAll('.collapsible-panel .collapsible-header').forEach((header) => {
   header.addEventListener('click', (e) => {
     // Ignorar clicks sobre botones / selects / inputs / etc
-    if (e.target.closest('button, select, input, textarea, .interview-controls, .translate-controls')) return;
-    header.closest('.collapsible-panel').classList.toggle('collapsed');
+    if (e.target.closest('button, select, input, textarea, .interview-controls, .translate-controls, .trading-controls')) return;
+    const panel = header.closest('.collapsible-panel');
+    const wasOpen = !panel.classList.contains('collapsed');
+    panel.classList.toggle('collapsed');
     saveCollapsedState();
+
+    // Si se colapsa un panel, limpiar su conversación y resultados
+    if (wasOpen) {
+      const panelId = panel.id;
+      const panelModeMap = {
+        'trading-panel': 'trading',
+        'interview-panel': 'interview',
+        'translate-panel': 'translate'
+      };
+      const panelMode = panelModeMap[panelId];
+
+      // Limpiar chat si pertenece a este panel
+      if (panelMode && state.mode === panelMode) {
+        state.messages = [];
+        state.mode = null;
+        conversationEl.innerHTML = '';
+        chatWrap.style.display = 'none';
+        setDanger(false);
+      }
+
+      // Limpiar resultado interno del panel de trading
+      if (panelId === 'trading-panel') {
+        const tradingResult = $('trading-result');
+        const tradingResultText = $('trading-result-text');
+        if (tradingResult) tradingResult.style.display = 'none';
+        if (tradingResultText) tradingResultText.innerHTML = '';
+      }
+    }
   });
 });
 
 function saveCollapsedState() {
   const state = {
     interview: document.getElementById('interview-panel')?.classList.contains('collapsed') || false,
-    translate: document.getElementById('translate-panel')?.classList.contains('collapsed') || false
+    translate: document.getElementById('translate-panel')?.classList.contains('collapsed') || false,
+    trading: document.getElementById('trading-panel')?.classList.contains('collapsed') || false
   };
   localStorage.setItem('phantom_collapsed', JSON.stringify(state));
 }
@@ -257,6 +333,7 @@ function restoreCollapsedState() {
     const state = JSON.parse(localStorage.getItem('phantom_collapsed') || '{}');
     if (state.interview) document.getElementById('interview-panel')?.classList.add('collapsed');
     if (state.translate) document.getElementById('translate-panel')?.classList.add('collapsed');
+    if (state.trading) document.getElementById('trading-panel')?.classList.add('collapsed');
   } catch {}
 }
 restoreCollapsedState();
@@ -270,24 +347,22 @@ async function runAction(action) {
   conversationEl.innerHTML = '';
   setDanger(false);
 
-  setStatus(action === 'resumir' ? 'Capturando y leyendo pantalla…' : 'Capturando y resolviendo…', 'busy');
-  addMessage('user', action === 'resumir' ? '📄 Resumir pantalla' : '💡 Contestar lo que está en pantalla');
+  setStatus(t(action === 'resumir' ? 'status.capturing_summarize' : 'status.capturing_answer'), 'busy');
+  addMessage('user', t(action === 'resumir' ? 'msg.user_summarize' : 'msg.user_answer'));
   const loading = addMessage('assistant', '', true);
 
   try {
     const screenshot = await captureScreen();
     if (!screenshot) throw new Error('No se pudo capturar la pantalla');
 
-    const userPrompt = action === 'resumir'
-      ? 'Resumí lo que se ve en esta captura.'
-      : 'Identificá la pregunta o problema visible en esta captura y resolvelo.';
+    const userPrompt = getUserPrompt(action);
 
     const messages = [{
       role: 'user',
       content: await buildContent(userPrompt, screenshot)
     }];
 
-    const system = action === 'resumir' ? SYS_RESUMEN : SYS_RESPONDER;
+    const system = getSystemPrompt(action);
     const resp = await phantom.ai.call({ messages, system });
 
     const phishing = detectPhishing(resp.text);
@@ -295,12 +370,16 @@ async function runAction(action) {
     loading.classList.remove('loading');
     loading.innerHTML = renderMarkdown(reply);
 
-    state.messages.push({ role: 'user', content: userPrompt }); // sin imagen en historial para ahorrar tokens
+    state.messages.push({ role: 'user', content: userPrompt });
     state.messages.push({ role: 'assistant', content: reply });
 
     setDanger(phishing);
     chatWrap.style.display = 'flex';
-    setStatus(phishing ? '⚠ Phishing detectado.' : (action === 'resumir' ? 'Resumen listo.' : 'Respuesta lista.'), phishing ? 'err' : 'ok');
+    setStatus(
+      phishing ? t('status.phishing_detected')
+               : t(action === 'resumir' ? 'status.summary_ready' : 'status.answer_ready'),
+      phishing ? 'err' : 'ok'
+    );
   } catch (err) {
     loading.classList.remove('loading');
     loading.innerHTML = '<em style="color:#dc2626">' + escapeHTML(err.message) + '</em>';
@@ -319,7 +398,7 @@ async function sendChat() {
 
   addMessage('user', q);
   const loading = addMessage('assistant', '', true);
-  setStatus('Pensando…', 'busy');
+  setStatus(t('status.thinking'), 'busy');
 
   state.messages.push({ role: 'user', content: q });
 
@@ -333,17 +412,28 @@ async function sendChat() {
       content: await buildContent(q, screenshot)
     });
 
-    const system = state.mode === 'resumir' ? SYS_RESUMEN : SYS_RESPONDER;
-    const resp = await phantom.ai.call({ messages: messagesForAPI, system });
+    let exchangeCtx = '';
+    if (state.mode === 'trading') {
+      const exData = await fetchExchangeData();
+      exchangeCtx = formatExchangeDataForPrompt(exData);
+    }
+    const system = state.mode === 'trading' ? getTradingSystemPrompt(exchangeCtx) : getSystemPrompt(state.mode || 'responder');
+    let aiPayload = { messages: messagesForAPI, system };
+    if (state.mode === 'trading') {
+      const tradingCfg = await phantom.config.get();
+      if (tradingCfg.tradingModel) aiPayload.model = tradingCfg.tradingModel;
+      aiPayload.maxTokens = 4096;
+    }
+    const resp = await phantom.ai.call(aiPayload);
 
     const phishing = detectPhishing(resp.text);
     const reply = stripPhishingMarker(resp.text);
     loading.classList.remove('loading');
-    loading.innerHTML = renderMarkdown(reply);
+    loading.innerHTML = state.mode === 'trading' ? renderTradingMarkdown(reply) : renderMarkdown(reply);
     state.messages.push({ role: 'assistant', content: reply });
 
     if (phishing) setDanger(true);
-    setStatus(phishing ? '⚠ Phishing detectado.' : 'Listo.', phishing ? 'err' : 'ok');
+    setStatus(phishing ? t('status.phishing_detected') : t('status.done'), phishing ? 'err' : 'ok');
   } catch (err) {
     loading.classList.remove('loading');
     loading.innerHTML = '<em style="color:#dc2626">' + escapeHTML(err.message) + '</em>';
@@ -396,7 +486,9 @@ function addMessage(role, content, loading = false) {
     wrap.innerHTML = role === 'assistant' ? renderMarkdown(content) : escapeHTML(content);
   }
   conversationEl.appendChild(wrap);
-  conversationEl.scrollTop = conversationEl.scrollHeight;
+  // Scroll the body container to bottom so user sees latest content
+  const bodyEl = document.querySelector('.body');
+  if (bodyEl) bodyEl.scrollTop = bodyEl.scrollHeight;
   return wrap;
 }
 
@@ -405,10 +497,25 @@ function escapeHTML(s) {
 }
 
 function renderMarkdown(text) {
+  // 1) Extraer bloques de código ```lang\n...\n``` antes de procesar el resto,
+  //    así no se les aplica markdown inline ni se escapa mal.
+  const codeBlocks = [];
+  text = text.replace(/```(\w+)?\n?([\s\S]*?)```/g, (m, lang, code) => {
+    const idx = codeBlocks.length;
+    codeBlocks.push({ lang: (lang || 'code').toLowerCase(), code: code.replace(/^\n+|\n+$/g, '') });
+    return `__CODE_BLOCK_${idx}__`;
+  });
+  // También soportar bloques con `` doble (a veces los modelos los devuelven así)
+  text = text.replace(/``([\s\S]*?)``/g, (m, code) => {
+    const idx = codeBlocks.length;
+    codeBlocks.push({ lang: 'code', code: code.replace(/^\n+|\n+$/g, '') });
+    return `__CODE_BLOCK_${idx}__`;
+  });
+
   const escaped = escapeHTML(text);
-  const html = escaped
+  let html = escaped
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
     .replace(/^### (.+)$/gm, '<h4>$1</h4>')
     .replace(/^## (.+)$/gm, '<h3>$1</h3>')
     .replace(/^# (.+)$/gm, '<h2>$1</h2>')
@@ -416,8 +523,418 @@ function renderMarkdown(text) {
     .replace(/(<li>.*<\/li>\n?)+/g, m => '<ul>' + m + '</ul>')
     .replace(/\n{2,}/g, '</p><p>')
     .replace(/\n/g, '<br/>');
-  return '<p>' + html + '</p>';
+  html = '<p>' + html + '</p>';
+
+  // 2) Reinsertar los bloques de código como elementos separados (fuera del <p>)
+  html = html.replace(/__CODE_BLOCK_(\d+)__/g, (m, idx) => {
+    const { lang, code } = codeBlocks[Number(idx)];
+    const id = 'code-' + Math.random().toString(36).slice(2, 10);
+    const copyLabel = (typeof t === 'function') ? t('chat.copy') : 'Copy';
+    return `</p><div class="code-block">
+        <div class="code-block-header">
+          <span class="code-block-lang">${escapeHTML(lang)}</span>
+          <button class="code-copy-btn" data-copy-target="${id}">📋 <span class="copy-label">${escapeHTML(copyLabel)}</span></button>
+        </div>
+        <pre class="code-block-pre" id="${id}">${escapeHTML(code)}</pre>
+      </div><p>`;
+  });
+
+  // Limpiar <p></p> vacíos que pueden quedar alrededor de los bloques
+  html = html.replace(/<p>\s*<\/p>/g, '');
+  return html;
 }
+
+// ─── Chart Pattern SVG Illustrations ────────────────────────────
+const PATTERN_SVGS = {
+  bull_flag: {
+    name: 'Bull Flag',
+    color: '#22c55e',
+    svg: `<svg viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+      <polyline points="10,85 40,60 50,65 80,25" stroke="#22c55e" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <rect x="78" y="22" width="50" height="30" fill="none" stroke="#22c55e" stroke-width="1.5" stroke-dasharray="4,3" rx="2" opacity="0.5"/>
+      <polyline points="80,25 90,35 95,30 100,38 110,33 115,37 125,32 128,35" stroke="#22c55e" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <polyline points="128,35 155,15 165,20 190,5" stroke="#22c55e" stroke-width="3" fill="none" stroke-linecap="round" stroke-dasharray="6,3"/>
+      <text x="100" y="65" font-size="9" fill="#22c55e" font-weight="600" text-anchor="middle" opacity="0.7">BREAKOUT ↗</text>
+      <polygon points="188,3 192,0 190,7" fill="#22c55e"/>
+    </svg>`
+  },
+  bear_flag: {
+    name: 'Bear Flag',
+    color: '#ef4444',
+    svg: `<svg viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+      <polyline points="10,15 40,40 50,35 80,75" stroke="#ef4444" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <rect x="78" y="50" width="50" height="30" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="4,3" rx="2" opacity="0.5"/>
+      <polyline points="80,75 90,65 95,70 100,62 110,67 115,63 125,68 128,65" stroke="#ef4444" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <polyline points="128,65 155,85 165,80 190,95" stroke="#ef4444" stroke-width="3" fill="none" stroke-linecap="round" stroke-dasharray="6,3"/>
+      <text x="100" y="95" font-size="9" fill="#ef4444" font-weight="600" text-anchor="middle" opacity="0.7">BREAKDOWN ↘</text>
+      <polygon points="188,97 192,100 190,93" fill="#ef4444"/>
+    </svg>`
+  },
+  ascending_triangle: {
+    name: 'Ascending Triangle',
+    color: '#22c55e',
+    svg: `<svg viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+      <line x1="10" y1="25" x2="180" y2="25" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <polyline points="10,90 45,60 55,70 85,45 95,55 125,35 135,42 165,28 175,25" stroke="#22c55e" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+      <polyline points="175,25 190,10" stroke="#22c55e" stroke-width="3" fill="none" stroke-linecap="round" stroke-dasharray="6,3"/>
+      <polygon points="188,8 192,5 190,13" fill="#22c55e"/>
+      <text x="120" y="18" font-size="9" fill="#94a3b8" font-weight="600">RESISTANCE</text>
+      <text x="50" y="85" font-size="9" fill="#22c55e" font-weight="600" opacity="0.7">HIGHER LOWS</text>
+    </svg>`
+  },
+  descending_triangle: {
+    name: 'Descending Triangle',
+    color: '#ef4444',
+    svg: `<svg viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+      <line x1="10" y1="75" x2="180" y2="75" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <polyline points="10,10 45,40 55,30 85,55 95,45 125,65 135,58 165,72 175,75" stroke="#ef4444" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+      <polyline points="175,75 190,90" stroke="#ef4444" stroke-width="3" fill="none" stroke-linecap="round" stroke-dasharray="6,3"/>
+      <polygon points="188,92 192,95 190,87" fill="#ef4444"/>
+      <text x="120" y="90" font-size="9" fill="#94a3b8" font-weight="600">SUPPORT</text>
+      <text x="50" y="22" font-size="9" fill="#ef4444" font-weight="600" opacity="0.7">LOWER HIGHS</text>
+    </svg>`
+  },
+  double_top: {
+    name: 'Double Top',
+    color: '#ef4444',
+    svg: `<svg viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+      <polyline points="10,80 35,50 55,15 75,45 95,50 115,15 135,50 160,80" stroke="#ef4444" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+      <line x1="55" y1="15" x2="115" y2="15" stroke="#ef4444" stroke-width="1" stroke-dasharray="4,3" opacity="0.5"/>
+      <line x1="35" y1="50" x2="160" y2="50" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <polyline points="160,80 175,90 190,95" stroke="#ef4444" stroke-width="3" fill="none" stroke-linecap="round" stroke-dasharray="6,3"/>
+      <text x="85" y="10" font-size="8" fill="#ef4444" font-weight="700" text-anchor="middle">M</text>
+      <text x="100" y="62" font-size="8" fill="#94a3b8" font-weight="600" text-anchor="middle">NECKLINE</text>
+    </svg>`
+  },
+  double_bottom: {
+    name: 'Double Bottom',
+    color: '#22c55e',
+    svg: `<svg viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+      <polyline points="10,20 35,50 55,85 75,55 95,50 115,85 135,50 160,20" stroke="#22c55e" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+      <line x1="55" y1="85" x2="115" y2="85" stroke="#22c55e" stroke-width="1" stroke-dasharray="4,3" opacity="0.5"/>
+      <line x1="35" y1="50" x2="160" y2="50" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <polyline points="160,20 175,10 190,5" stroke="#22c55e" stroke-width="3" fill="none" stroke-linecap="round" stroke-dasharray="6,3"/>
+      <text x="85" y="98" font-size="8" fill="#22c55e" font-weight="700" text-anchor="middle">W</text>
+      <text x="100" y="45" font-size="8" fill="#94a3b8" font-weight="600" text-anchor="middle">NECKLINE</text>
+    </svg>`
+  },
+  head_shoulders: {
+    name: 'Head & Shoulders',
+    color: '#ef4444',
+    svg: `<svg viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+      <polyline points="10,75 30,55 45,30 60,55 80,50 100,10 120,50 140,55 155,30 170,55 190,75" stroke="#ef4444" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+      <line x1="30" y1="55" x2="170" y2="55" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <text x="45" y="25" font-size="7" fill="#64748b" font-weight="600" text-anchor="middle">LS</text>
+      <text x="100" y="7" font-size="7" fill="#64748b" font-weight="600" text-anchor="middle">HEAD</text>
+      <text x="155" y="25" font-size="7" fill="#64748b" font-weight="600" text-anchor="middle">RS</text>
+      <text x="100" y="68" font-size="8" fill="#94a3b8" font-weight="600" text-anchor="middle">NECKLINE</text>
+    </svg>`
+  },
+  inv_head_shoulders: {
+    name: 'Inverse H&S',
+    color: '#22c55e',
+    svg: `<svg viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+      <polyline points="10,25 30,45 45,70 60,45 80,50 100,90 120,50 140,45 155,70 170,45 190,25" stroke="#22c55e" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+      <line x1="30" y1="45" x2="170" y2="45" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <text x="45" y="82" font-size="7" fill="#64748b" font-weight="600" text-anchor="middle">LS</text>
+      <text x="100" y="99" font-size="7" fill="#64748b" font-weight="600" text-anchor="middle">HEAD</text>
+      <text x="155" y="82" font-size="7" fill="#64748b" font-weight="600" text-anchor="middle">RS</text>
+      <text x="100" y="38" font-size="8" fill="#94a3b8" font-weight="600" text-anchor="middle">NECKLINE</text>
+    </svg>`
+  },
+  rising_wedge: {
+    name: 'Rising Wedge',
+    color: '#ef4444',
+    svg: `<svg viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+      <line x1="10" y1="90" x2="170" y2="20" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <line x1="10" y1="60" x2="170" y2="25" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <polyline points="10,85 35,55 50,70 75,40 90,55 115,30 130,42 155,25 170,22" stroke="#ef4444" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+      <polyline points="170,22 180,50 190,85" stroke="#ef4444" stroke-width="3" fill="none" stroke-linecap="round" stroke-dasharray="6,3"/>
+      <text x="100" y="95" font-size="9" fill="#ef4444" font-weight="600" text-anchor="middle" opacity="0.7">BEARISH ↘</text>
+    </svg>`
+  },
+  falling_wedge: {
+    name: 'Falling Wedge',
+    color: '#22c55e',
+    svg: `<svg viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+      <line x1="10" y1="10" x2="170" y2="80" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <line x1="10" y1="40" x2="170" y2="75" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <polyline points="10,15 35,45 50,30 75,60 90,50 115,70 130,62 155,75 170,78" stroke="#22c55e" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+      <polyline points="170,78 180,50 190,15" stroke="#22c55e" stroke-width="3" fill="none" stroke-linecap="round" stroke-dasharray="6,3"/>
+      <text x="100" y="95" font-size="9" fill="#22c55e" font-weight="600" text-anchor="middle" opacity="0.7">BULLISH ↗</text>
+    </svg>`
+  },
+  cup_handle: {
+    name: 'Cup & Handle',
+    color: '#22c55e',
+    svg: `<svg viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+      <path d="M10,20 Q15,20 25,45 Q50,90 100,90 Q150,90 175,45 Q180,30 180,20" stroke="#22c55e" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+      <path d="M180,20 Q182,25 183,32 Q185,38 186,32 Q188,25 188,22" stroke="#22c55e" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <line x1="10" y1="20" x2="195" y2="20" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <polyline points="188,22 192,10 196,5" stroke="#22c55e" stroke-width="3" fill="none" stroke-linecap="round" stroke-dasharray="6,3"/>
+      <text x="100" y="80" font-size="9" fill="#22c55e" font-weight="600" text-anchor="middle" opacity="0.7">CUP</text>
+      <text x="184" y="45" font-size="7" fill="#22c55e" font-weight="600" text-anchor="middle" opacity="0.7">H</text>
+    </svg>`
+  },
+  channel_up: {
+    name: 'Ascending Channel',
+    color: '#22c55e',
+    svg: `<svg viewBox="0 0 200 110" xmlns="http://www.w3.org/2000/svg">
+      <line x1="10" y1="85" x2="185" y2="30" stroke="#22c55e" stroke-width="1.5" stroke-dasharray="5,3" opacity="0.5"/>
+      <line x1="10" y1="60" x2="185" y2="8" stroke="#22c55e" stroke-width="1.5" stroke-dasharray="5,3" opacity="0.5"/>
+      <polyline points="10,82 30,58 50,75 70,50 90,65 110,42 130,55 150,35 170,48 185,30" stroke="#22c55e" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+      <text x="100" y="105" font-size="9" fill="#22c55e" font-weight="600" text-anchor="middle" opacity="0.7">UPTREND CHANNEL</text>
+    </svg>`
+  },
+  channel_down: {
+    name: 'Descending Channel',
+    color: '#ef4444',
+    svg: `<svg viewBox="0 0 200 110" xmlns="http://www.w3.org/2000/svg">
+      <line x1="10" y1="15" x2="180" y2="65" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="5,3" opacity="0.5"/>
+      <line x1="10" y1="40" x2="180" y2="88" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="5,3" opacity="0.5"/>
+      <polyline points="10,18 30,42 50,25 70,50 90,35 110,58 130,45 150,62 170,52 180,67" stroke="#ef4444" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+      <text x="100" y="105" font-size="9" fill="#ef4444" font-weight="600" text-anchor="middle" opacity="0.7">DOWNTREND CHANNEL</text>
+    </svg>`
+  },
+  symmetrical_triangle: {
+    name: 'Symmetrical Triangle',
+    color: '#d97706',
+    svg: `<svg viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+      <line x1="10" y1="15" x2="165" y2="48" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <line x1="10" y1="85" x2="165" y2="52" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <polyline points="10,18 30,78 50,25 75,70 95,35 120,62 140,42 160,52" stroke="#d97706" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+      <polyline points="160,52 175,30 190,10" stroke="#22c55e" stroke-width="2" fill="none" stroke-linecap="round" stroke-dasharray="5,3"/>
+      <polyline points="160,52 175,70 190,90" stroke="#ef4444" stroke-width="2" fill="none" stroke-linecap="round" stroke-dasharray="5,3"/>
+      <text x="185" y="8" font-size="7" fill="#22c55e" font-weight="700">↗</text>
+      <text x="185" y="98" font-size="7" fill="#ef4444" font-weight="700">↘</text>
+      <text x="85" y="98" font-size="8" fill="#d97706" font-weight="600" text-anchor="middle" opacity="0.7">BREAKOUT PENDING</text>
+    </svg>`
+  },
+  engulfing_bull: {
+    name: 'Bullish Engulfing',
+    color: '#22c55e',
+    svg: `<svg viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+      <line x1="70" y1="20" x2="70" y2="90" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,3" opacity="0.3"/>
+      <rect x="55" y="35" width="12" height="35" fill="#ef4444" rx="1" stroke="#b91c1c" stroke-width="1"/>
+      <line x1="61" y1="25" x2="61" y2="35" stroke="#ef4444" stroke-width="1.5"/>
+      <line x1="61" y1="70" x2="61" y2="80" stroke="#ef4444" stroke-width="1.5"/>
+      <rect x="75" y="25" width="18" height="50" fill="#22c55e" rx="1" stroke="#16a34a" stroke-width="1"/>
+      <line x1="84" y1="15" x2="84" y2="25" stroke="#22c55e" stroke-width="1.5"/>
+      <line x1="84" y1="75" x2="84" y2="85" stroke="#22c55e" stroke-width="1.5"/>
+      <polyline points="105,50 125,35 145,25 165,15" stroke="#22c55e" stroke-width="2" fill="none" stroke-linecap="round" stroke-dasharray="5,3"/>
+      <polygon points="163,13 168,10 165,18" fill="#22c55e"/>
+      <text x="140" y="45" font-size="8" fill="#22c55e" font-weight="600" opacity="0.7">REVERSAL ↗</text>
+    </svg>`
+  },
+  engulfing_bear: {
+    name: 'Bearish Engulfing',
+    color: '#ef4444',
+    svg: `<svg viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+      <line x1="70" y1="10" x2="70" y2="90" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,3" opacity="0.3"/>
+      <rect x="55" y="30" width="12" height="35" fill="#22c55e" rx="1" stroke="#16a34a" stroke-width="1"/>
+      <line x1="61" y1="20" x2="61" y2="30" stroke="#22c55e" stroke-width="1.5"/>
+      <line x1="61" y1="65" x2="61" y2="75" stroke="#22c55e" stroke-width="1.5"/>
+      <rect x="75" y="20" width="18" height="50" fill="#ef4444" rx="1" stroke="#b91c1c" stroke-width="1"/>
+      <line x1="84" y1="12" x2="84" y2="20" stroke="#ef4444" stroke-width="1.5"/>
+      <line x1="84" y1="70" x2="84" y2="80" stroke="#ef4444" stroke-width="1.5"/>
+      <polyline points="105,50 125,65 145,75 165,85" stroke="#ef4444" stroke-width="2" fill="none" stroke-linecap="round" stroke-dasharray="5,3"/>
+      <polygon points="163,87 168,90 165,82" fill="#ef4444"/>
+      <text x="140" y="60" font-size="8" fill="#ef4444" font-weight="600" opacity="0.7">REVERSAL ↘</text>
+    </svg>`
+  },
+  hammer: {
+    name: 'Hammer (Bullish)',
+    color: '#22c55e',
+    svg: `<svg viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+      <polyline points="20,20 50,40 70,35 90,50" stroke="#ef4444" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <line x1="100" y1="30" x2="100" y2="42" stroke="#22c55e" stroke-width="1.5"/>
+      <rect x="93" y="42" width="14" height="12" fill="#22c55e" rx="1" stroke="#16a34a" stroke-width="1"/>
+      <line x1="100" y1="54" x2="100" y2="85" stroke="#22c55e" stroke-width="1.5"/>
+      <polyline points="110,48 130,35 150,25 170,15" stroke="#22c55e" stroke-width="2" fill="none" stroke-linecap="round" stroke-dasharray="5,3"/>
+      <polygon points="168,13 173,10 170,18" fill="#22c55e"/>
+      <text x="100" y="97" font-size="8" fill="#22c55e" font-weight="700" text-anchor="middle">HAMMER</text>
+    </svg>`
+  },
+  doji: {
+    name: 'Doji (Indecision)',
+    color: '#d97706',
+    svg: `<svg viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+      <polyline points="20,30 50,45 70,40 85,48" stroke="#64748b" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <line x1="100" y1="20" x2="100" y2="48" stroke="#d97706" stroke-width="1.5"/>
+      <rect x="94" y="48" width="12" height="3" fill="#d97706" rx="0.5" stroke="#b45309" stroke-width="1"/>
+      <line x1="100" y1="51" x2="100" y2="80" stroke="#d97706" stroke-width="1.5"/>
+      <polyline points="115,42 135,30 155,20" stroke="#22c55e" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-dasharray="4,3" opacity="0.6"/>
+      <polyline points="115,55 135,65 155,78" stroke="#ef4444" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-dasharray="4,3" opacity="0.6"/>
+      <text x="165" y="18" font-size="7" fill="#22c55e" font-weight="600">?</text>
+      <text x="165" y="82" font-size="7" fill="#ef4444" font-weight="600">?</text>
+      <text x="100" y="97" font-size="8" fill="#d97706" font-weight="700" text-anchor="middle">DOJI</text>
+    </svg>`
+  }
+};
+
+function buildPatternCard(patternId, caption) {
+  const p = PATTERN_SVGS[patternId];
+  if (!p) return '';
+  const safeCaption = caption ? escapeHTML(caption) : '';
+  return `<div class="pattern-card" style="border-color:${p.color}20">
+    <div class="pattern-card-header" style="background:${p.color}12;color:${p.color}">
+      📐 ${escapeHTML(p.name)}
+    </div>
+    <div class="pattern-card-svg">${p.svg}</div>
+    ${safeCaption ? `<div class="pattern-card-caption">${safeCaption}</div>` : ''}
+  </div>`;
+}
+
+// ─── Trading-specific markdown with generative UI (colors, bars, cards) ──
+function renderTradingMarkdown(text) {
+  // 1. Extract special trading blocks BEFORE markdown processing
+  const tradingBlocks = [];
+
+  // Extract BIAS_BAR
+  text = text.replace(/\[BIAS_BAR\]\s*([\s\S]*?)\s*\[\/BIAS_BAR\]/gi, (m, content) => {
+    const longMatch = content.match(/LONG:\s*(\d+)%/i);
+    const shortMatch = content.match(/SHORT:\s*(\d+)%/i);
+    const longPct = longMatch ? parseInt(longMatch[1]) : 50;
+    const shortPct = shortMatch ? parseInt(shortMatch[1]) : 50;
+    const idx = tradingBlocks.length;
+    tradingBlocks.push(`<div class="trade-bias-bar">
+      <div class="bias-label-wrap">
+        <span class="bias-label long-label">🟢 LONG ${longPct}%</span>
+        <span class="bias-label short-label">🔴 SHORT ${shortPct}%</span>
+      </div>
+      <div class="bias-track">
+        <div class="bias-fill bias-long" style="width:${longPct}%"></div>
+        <div class="bias-fill bias-short" style="width:${shortPct}%"></div>
+      </div>
+    </div>`);
+    return `__TRADE_BLOCK_${idx}__`;
+  });
+
+  // Extract TRADE_LONG
+  text = text.replace(/\[TRADE_LONG\]\s*([\s\S]*?)\s*\[\/TRADE_LONG\]/gi, (m, content) => {
+    const idx = tradingBlocks.length;
+    tradingBlocks.push(buildTradeCard(content, 'long'));
+    return `__TRADE_BLOCK_${idx}__`;
+  });
+
+  // Extract TRADE_SHORT
+  text = text.replace(/\[TRADE_SHORT\]\s*([\s\S]*?)\s*\[\/TRADE_SHORT\]/gi, (m, content) => {
+    const idx = tradingBlocks.length;
+    tradingBlocks.push(buildTradeCard(content, 'short'));
+    return `__TRADE_BLOCK_${idx}__`;
+  });
+
+  // Extract PATTERN tags: [PATTERN:bull_flag] or [PATTERN:bull_flag "optional caption"]
+  text = text.replace(/\[PATTERN:(\w+)(?:\s+"([^"]*)")?\]/gi, (m, id, caption) => {
+    const card = buildPatternCard(id, caption || '');
+    if (!card) return m; // unknown pattern, leave as text
+    const idx = tradingBlocks.length;
+    tradingBlocks.push(card);
+    return `__TRADE_BLOCK_${idx}__`;
+  });
+
+  // 2. Render normal markdown
+  let html = renderMarkdown(text);
+
+  // 3. Colorize trading keywords BEFORE re-inserting blocks
+  //    (doing it after would break HTML attributes inside trade cards/bias bars)
+  //    Only colorize text content, not inside HTML tags
+  function colorizeOutsideTags(h) {
+    // Split HTML into tags and text segments, only colorize text segments
+    return h.replace(/([^<]+)|(<[^>]+>)/g, (match, textPart, tagPart) => {
+      if (tagPart) return tagPart; // leave HTML tags untouched
+      if (!textPart) return match;
+      let t = textPart;
+      // LONG, BULLISH, BUY → green
+      t = t.replace(/\b(LONG|BULLISH|BUY|COMPRA|ALCISTA|HOLD|MANTENER|MANTÉN)\b/gi,
+        '<span class="t-green">$1</span>');
+      // SHORT, BEARISH, SELL → red
+      t = t.replace(/\b(SHORT|BEARISH|SELL|VENTA|BAJISTA|CERRAR|CORTAR|SALIR)\b/gi,
+        '<span class="t-red">$1</span>');
+      // TP → green
+      t = t.replace(/\b(TP\d?)\b/gi, '<span class="t-green">$1</span>');
+      // SL → red
+      t = t.replace(/\b(SL|Stop Loss|Stop-Loss)\b/gi, '<span class="t-red">$1</span>');
+      // Positive PnL → green
+      t = t.replace(/(\+\$[\d,\.]+)/g, '<span class="t-green">$1</span>');
+      t = t.replace(/(\+[\d\.]+%)/g, '<span class="t-green">$1</span>');
+      // Negative PnL → red
+      t = t.replace(/(\-\$[\d,\.]+)/g, '<span class="t-red">$1</span>');
+      t = t.replace(/(\-[\d\.]+%)/g, '<span class="t-red">$1</span>');
+      // R:R → gold
+      t = t.replace(/(R:R\s*\d+:\d+[\.\d]*)/gi, '<span class="t-gold">$1</span>');
+      t = t.replace(/(\d+:\d+[\.\d]*\s*R:R)/gi, '<span class="t-gold">$1</span>');
+      return t;
+    });
+  }
+  html = colorizeOutsideTags(html);
+
+  // 4. Re-insert trading blocks AFTER colorization (so their HTML stays intact)
+  html = html.replace(/__TRADE_BLOCK_(\d+)__/g, (m, idx) => {
+    return '</p>' + tradingBlocks[Number(idx)] + '<p>';
+  });
+
+  // Clean empty paragraphs
+  html = html.replace(/<p>\s*<\/p>/g, '');
+  return html;
+}
+
+function buildTradeCard(content, side) {
+  const lines = content.trim().split('\n').filter(l => l.trim());
+  const isLong = side === 'long';
+  const icon = isLong ? '🟢' : '🔴';
+  const title = isLong ? 'LONG SETUP' : 'SHORT SETUP';
+  const cls = isLong ? 'trade-card-long' : 'trade-card-short';
+
+  let rows = '';
+  for (const line of lines) {
+    const parts = line.split(':');
+    if (parts.length < 2) continue;
+    const label = escapeHTML(parts[0].trim());
+    const value = escapeHTML(parts.slice(1).join(':').trim());
+
+    let rowCls = '';
+    if (/^(ENTRY|ENTRADA)/i.test(label)) rowCls = 'entry-row';
+    else if (/^(SL|STOP)/i.test(label)) rowCls = 'sl-row';
+    else if (/^TP/i.test(label)) rowCls = 'tp-row';
+    else if (/^(SIZE|TAMAÑO)/i.test(label)) rowCls = 'size-row';
+
+    rows += `<div class="trade-card-row ${rowCls}">
+      <span class="trade-card-label">${label}</span>
+      <span class="trade-card-value">${value}</span>
+    </div>`;
+  }
+
+  return `<div class="trade-card ${cls}">
+    <div class="trade-card-header">${icon} ${title}</div>
+    ${rows}
+  </div>`;
+}
+
+// ─── Handler global para el botón "Copy" de los bloques de código ──
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.code-copy-btn');
+  if (!btn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const id = btn.dataset.copyTarget;
+  const pre = document.getElementById(id);
+  if (!pre) return;
+
+  navigator.clipboard.writeText(pre.textContent).then(() => {
+    const label = btn.querySelector('.copy-label');
+    const original = label.textContent;
+    const copiedText = (typeof t === 'function') ? t('chat.copied') : 'Copied!';
+    label.textContent = copiedText;
+    btn.classList.add('copied');
+    setTimeout(() => {
+      label.textContent = original;
+      btn.classList.remove('copied');
+    }, 1800);
+  }).catch(err => {
+    console.error('Copy failed:', err);
+  });
+});
 
 function setStatus(msg, kind) {
   statusEl.textContent = msg;
@@ -434,14 +951,16 @@ function stripPhishingMarker(text) {
   return text.replace(/\[\[PHISHING_DETECTED\]\]\s*/g, '').trim();
 }
 
-// ─── Traducción en vivo (audio del sistema → Whisper → Claude/GPT) ──
+// ─── Traducción en vivo (Deepgram streaming + Claude/GPT translation) ──
 const translate = {
   active: false,
-  stream: null,
-  recorder: null,
-  cycleTimer: null,
-  CHUNK_MS: 2500,         // 2.5s — buen balance latencia/precisión
-  pendingPlaceholder: null // div "..." que se reemplaza con la traducción
+  stream: null,        // MediaStream del sistema
+  audioCtx: null,      // AudioContext para procesar PCM
+  sourceNode: null,    // MediaStreamSource
+  processorNode: null, // ScriptProcessorNode (captura Float32 → Int16)
+  currentLine: null,   // Línea actual de subtítulo (interim updates)
+  pendingTranslation: null, // Promise de traducción en curso
+  useDeepgram: true    // true = Deepgram streaming, false = Whisper chunks (fallback)
 };
 
 const btnTranslate = $('btn-translate-toggle');
@@ -457,10 +976,17 @@ btnTranslate.addEventListener('click', () => {
 function applyTranslatePanelVisibility(on) {
   translatePanel.style.display = on ? 'flex' : 'none';
   document.body.classList.toggle('translating', on);
-  // Agrandar la ventana cuando está activa, volver al tamaño normal cuando no
   if (on) {
     phantom.window.resize({ width: 640, height: 780 });
   } else {
+    // Limpiar conversación de traducción al desactivar
+    if (state.mode === 'translate') {
+      state.messages = [];
+      state.mode = null;
+      conversationEl.innerHTML = '';
+      chatWrap.style.display = 'none';
+      setDanger(false);
+    }
     phantom.window.resize({ width: 420, height: 600 });
   }
   if (!on && translate.active) stopTranslation();
@@ -483,32 +1009,42 @@ function expandPanel(panelId) {
 
 async function startTranslation() {
   expandPanel('translate-panel');
+  const cfg = await phantom.config.get();
+
+  // Decidir: Deepgram (streaming) o Whisper (chunks)
+  translate.useDeepgram = !!cfg.deepgramKey;
+
+  if (!translate.useDeepgram && !cfg.openaiKey) {
+    setStatus('⚠ Falta API key de Deepgram o OpenAI en settings.', 'err');
+    return;
+  }
+
   try {
-    // Limpiar mensaje vacío
     const empty = translateOutput.querySelector('.translate-empty');
     if (empty) empty.remove();
 
     setStatus('Pidiendo audio del sistema…', 'busy');
-    // getDisplayMedia con audio loopback. macOS 13+.
     translate.stream = await navigator.mediaDevices.getDisplayMedia({
-      video: { width: 1, height: 1 }, // mínimo posible — solo necesitamos audio
+      video: { width: 1, height: 1 },
       audio: true
     });
-
-    // Cortar el track de video (no nos sirve, sólo lo pedimos para satisfacer la API)
-    const videoTracks = translate.stream.getVideoTracks();
-    videoTracks.forEach(t => t.stop());
+    translate.stream.getVideoTracks().forEach(t => t.stop());
 
     if (translate.stream.getAudioTracks().length === 0) {
       throw new Error('No se obtuvo pista de audio. ¿Aceptaste compartir audio del sistema?');
     }
 
     translate.active = true;
-    btnTranslate.textContent = 'Detener';
+    btnTranslate.textContent = t('translate.stop');
     translateStatus.classList.add('live');
-    setStatus('Escuchando audio del sistema…', 'ok');
 
-    runRecordingCycle();
+    if (translate.useDeepgram) {
+      await startDeepgramStream(cfg);
+    } else {
+      // Fallback: Whisper chunk-based (sistema anterior)
+      setStatus('Escuchando audio del sistema (Whisper)…', 'ok');
+      runWhisperCycle();
+    }
   } catch (err) {
     console.error('startTranslation:', err);
     setStatus('⚠ ' + err.message, 'err');
@@ -516,30 +1052,155 @@ async function startTranslation() {
   }
 }
 
+// ─── DEEPGRAM STREAMING ──────────────────────────────────────────
+async function startDeepgramStream(cfg) {
+  setStatus('Conectando a Deepgram…', 'busy');
+  const from = cfg.translateFrom || 'auto';
+
+  // AudioContext para capturar PCM desde el MediaStream
+  const audioCtx = new AudioContext({ sampleRate: 16000 });
+  translate.audioCtx = audioCtx;
+
+  const source = audioCtx.createMediaStreamSource(
+    new MediaStream(translate.stream.getAudioTracks())
+  );
+  translate.sourceNode = source;
+
+  // ScriptProcessor: captura Float32 → convierte a Int16 → envía al main
+  const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+  translate.processorNode = processor;
+
+  processor.onaudioprocess = (ev) => {
+    if (!translate.active) return;
+    const float32 = ev.inputBuffer.getChannelData(0);
+    // Float32 → Int16 PCM
+    const int16 = new Int16Array(float32.length);
+    for (let i = 0; i < float32.length; i++) {
+      const s = Math.max(-1, Math.min(1, float32[i]));
+      int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    phantom.deepgram.sendAudio(int16.buffer);
+  };
+
+  source.connect(processor);
+  processor.connect(audioCtx.destination); // necesario para que funcione
+
+  // Conectar Deepgram WebSocket via main process
+  try {
+    await phantom.deepgram.start({ language: from, sampleRate: 16000 });
+    setStatus('🎙️ Streaming en vivo (Deepgram)…', 'ok');
+  } catch (err) {
+    console.error('Deepgram start error:', err);
+    setStatus('⚠ ' + err.message, 'err');
+    stopTranslation();
+  }
+}
+
+// Deepgram interim: actualiza la línea actual en tiempo real
+phantom.on('deepgram:interim', (transcript) => {
+  if (!translate.active) return;
+  if (!translate.currentLine) {
+    translate.currentLine = createTranslateLine();
+  }
+  const srcEl = translate.currentLine.querySelector('.src');
+  if (srcEl) srcEl.textContent = transcript;
+  translateOutput.scrollTop = translateOutput.scrollHeight;
+});
+
+// Deepgram final: marca la línea como final y traduce
+phantom.on('deepgram:final', async (transcript, speechFinal) => {
+  if (!translate.active) return;
+  if (!transcript || transcript.trim().length < 2) return;
+
+  if (!translate.currentLine) {
+    translate.currentLine = createTranslateLine();
+  }
+  const line = translate.currentLine;
+  const srcEl = line.querySelector('.src');
+  const trEl = line.querySelector('.tr');
+  if (srcEl) srcEl.textContent = transcript;
+
+  // Si es speech_final (pausa detectada), finalizar la línea y traducir
+  if (speechFinal) {
+    translate.currentLine = null; // Próximo texto va en nueva línea
+
+    const cfg = await phantom.config.get();
+    const from = cfg.translateFrom || 'auto';
+    const to = cfg.translateTo || 'es';
+
+    // Si mismo idioma, no traducir
+    if (from !== 'auto' && from === to) {
+      line.classList.remove('pending');
+      if (trEl) trEl.textContent = transcript;
+      return;
+    }
+
+    // Traducir con Claude/GPT
+    try {
+      const t2 = await phantom.translate.text({ text: transcript, from, to });
+      const translated = (t2.text || '').trim();
+      line.classList.remove('pending');
+      if (trEl) trEl.textContent = translated || transcript;
+      translateOutput.scrollTop = translateOutput.scrollHeight;
+    } catch (err) {
+      line.classList.remove('pending');
+      if (trEl) trEl.textContent = '⚠ ' + err.message;
+    }
+  }
+});
+
+phantom.on('deepgram:error', (msg) => {
+  console.error('Deepgram error:', msg);
+  if (translate.active) {
+    setStatus('⚠ Deepgram: ' + msg, 'err');
+  }
+});
+
+function createTranslateLine() {
+  const line = document.createElement('div');
+  line.className = 'translate-line pending';
+  line.innerHTML = '<div class="src">…</div><div class="tr"><span class="dots"><span></span><span></span><span></span></span></div>';
+  translateOutput.appendChild(line);
+  translateOutput.scrollTop = translateOutput.scrollHeight;
+  return line;
+}
+
 function stopTranslation() {
   translate.active = false;
-  btnTranslate.textContent = 'Iniciar';
+  btnTranslate.textContent = t('translate.start');
   translateStatus.classList.remove('live');
+  translate.currentLine = null;
 
-  if (translate.recorder && translate.recorder.state !== 'inactive') {
-    try { translate.recorder.stop(); } catch {}
-  }
-  translate.recorder = null;
-
-  if (translate.cycleTimer) {
-    clearTimeout(translate.cycleTimer);
-    translate.cycleTimer = null;
+  // Cerrar Deepgram
+  if (translate.useDeepgram) {
+    phantom.deepgram.stop().catch(() => {});
   }
 
+  // Cerrar AudioContext + processor
+  if (translate.processorNode) {
+    try { translate.processorNode.disconnect(); } catch {}
+    translate.processorNode = null;
+  }
+  if (translate.sourceNode) {
+    try { translate.sourceNode.disconnect(); } catch {}
+    translate.sourceNode = null;
+  }
+  if (translate.audioCtx) {
+    try { translate.audioCtx.close(); } catch {}
+    translate.audioCtx = null;
+  }
+
+  // Cerrar MediaStream
   if (translate.stream) {
     translate.stream.getTracks().forEach(t => t.stop());
     translate.stream = null;
   }
+
   setStatus('Traducción detenida.', 'ok');
 }
 
-// Ciclo: graba CHUNK_MS, manda a Whisper + Claude, repite mientras esté activo
-async function runRecordingCycle() {
+// ─── FALLBACK: Whisper chunk-based (sistema anterior) ────────────
+function runWhisperCycle() {
   if (!translate.active || !translate.stream) return;
 
   const audioStream = new MediaStream(translate.stream.getAudioTracks());
@@ -552,103 +1213,52 @@ async function runRecordingCycle() {
   try {
     recorder = new MediaRecorder(audioStream, { mimeType });
   } catch (e) {
-    setStatus('⚠ MediaRecorder no soporta este formato: ' + e.message, 'err');
+    setStatus('⚠ MediaRecorder error: ' + e.message, 'err');
     stopTranslation();
     return;
   }
-  translate.recorder = recorder;
 
   recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
   recorder.onstop = async () => {
-    // 🚀 Arrancar INMEDIATAMENTE el próximo ciclo — no esperar la transcripción
-    if (translate.active) runRecordingCycle();
-
+    if (translate.active) runWhisperCycle();
     if (chunks.length === 0) return;
     const blob = new Blob(chunks, { type: mimeType });
     const arrayBuf = await blob.arrayBuffer();
     const base64 = arrayBufferToBase64(arrayBuf);
-
-    // Crear placeholder visual con "..." mientras se procesa
-    const placeholder = addPlaceholder();
-
-    transcribeAndTranslate(base64, mimeType, placeholder).catch(err => {
-      console.error('transcribeAndTranslate:', err);
+    const placeholder = createTranslateLine();
+    whisperTranscribeAndTranslate(base64, mimeType, placeholder).catch(err => {
       placeholder.classList.remove('pending');
       placeholder.querySelector('.tr').textContent = '⚠ ' + err.message;
     });
   };
 
   recorder.start();
-  translate.cycleTimer = setTimeout(() => {
+  setTimeout(() => {
     if (recorder.state !== 'inactive') {
       try { recorder.stop(); } catch {}
     }
-  }, translate.CHUNK_MS);
+  }, 2500);
 }
 
-function addPlaceholder() {
-  const line = document.createElement('div');
-  line.className = 'translate-line pending';
-  line.innerHTML = '<div class="src">…</div><div class="tr"><span class="dots"><span></span><span></span><span></span></span></div>';
-  translateOutput.appendChild(line);
-  translateOutput.scrollTop = translateOutput.scrollHeight;
-  return line;
-}
-
-async function transcribeAndTranslate(audioBase64, mimeType, placeholder) {
+async function whisperTranscribeAndTranslate(audioBase64, mimeType, placeholder) {
   const cfg = await phantom.config.get();
   const from = cfg.translateFrom || 'auto';
   const to = cfg.translateTo || 'es';
 
-  const t1 = await phantom.translate.transcribe({
-    audioBase64,
-    mimeType,
-    language: from
-  });
+  const t1 = await phantom.translate.transcribe({ audioBase64, mimeType, language: from });
   const original = (t1.text || '').trim();
-  if (!original || original.length < 2) {
-    // Silencio / ruido → eliminar placeholder
-    if (placeholder) placeholder.remove();
-    return;
-  }
+  if (!original || original.length < 2) { placeholder.remove(); return; }
 
-  // Mostrar la transcripción YA, antes de esperar la traducción (visible 1 paso antes)
-  if (placeholder) {
-    placeholder.querySelector('.src').textContent = original;
-  }
-
-  // Si origen = destino, no traducir (ahorro un round-trip)
+  placeholder.querySelector('.src').textContent = original;
   if (from !== 'auto' && from === to) {
-    if (placeholder) {
-      placeholder.classList.remove('pending');
-      placeholder.querySelector('.tr').textContent = original;
-    }
+    placeholder.classList.remove('pending');
+    placeholder.querySelector('.tr').textContent = original;
     return;
   }
 
   const t2 = await phantom.translate.text({ text: original, from, to });
-  const translated = (t2.text || '').trim();
-  if (placeholder) {
-    placeholder.classList.remove('pending');
-    placeholder.querySelector('.tr').textContent = translated || original;
-    translateOutput.scrollTop = translateOutput.scrollHeight;
-  }
-}
-
-function addTranslateLine(src, tr) {
-  const line = document.createElement('div');
-  line.className = 'translate-line';
-  if (src) {
-    const s = document.createElement('div');
-    s.className = 'src';
-    s.textContent = src;
-    line.appendChild(s);
-  }
-  const t = document.createElement('div');
-  t.className = 'tr';
-  t.textContent = tr;
-  line.appendChild(t);
-  translateOutput.appendChild(line);
+  placeholder.classList.remove('pending');
+  placeholder.querySelector('.tr').textContent = (t2.text || '').trim() || original;
   translateOutput.scrollTop = translateOutput.scrollHeight;
 }
 
@@ -702,9 +1312,18 @@ function applyInterviewPanelVisibility(on) {
   document.body.classList.toggle('interviewing', on);
   if (on) {
     phantom.window.resize({ width: 640, height: 780 });
-  } else if (!$('cfg-translate').checked) {
-    // Solo achicar si traducción tampoco está activa
-    phantom.window.resize({ width: 420, height: 600 });
+  } else {
+    // Limpiar conversación de entrevista al desactivar
+    if (state.mode === 'interview') {
+      state.messages = [];
+      state.mode = null;
+      conversationEl.innerHTML = '';
+      chatWrap.style.display = 'none';
+      setDanger(false);
+    }
+    if (!$('cfg-translate').checked) {
+      phantom.window.resize({ width: 420, height: 600 });
+    }
   }
   if (!on && interview.active) stopInterview();
 }
@@ -792,8 +1411,8 @@ async function runInterviewCycle() {
     const base64 = arrayBufferToBase64(arrayBuf);
 
     try {
-      const t = await phantom.translate.transcribe({ audioBase64: base64, mimeType, language: 'auto' });
-      const piece = (t.text || '').trim();
+      const transcription = await phantom.translate.transcribe({ audioBase64: base64, mimeType, language: 'auto' });
+      const piece = (transcription.text || '').trim();
       if (!piece || piece.length < 2) {
         // Silencio: si había buffer acumulado, considerar fin de pregunta
         checkBufferForQuestion(true);
@@ -959,7 +1578,7 @@ async function startManualRecording() {
     // Timer
     updateRecTimer();
     manualRec.timerInterval = setInterval(updateRecTimer, 250);
-    setStatus('🔴 Grabando…', 'busy');
+    setStatus(t('status.recording'), 'busy');
   } catch (err) {
     console.error('startManualRecording:', err);
     setStatus('⚠ ' + err.message, 'err');
@@ -999,39 +1618,462 @@ async function processManualRecording() {
   cleanupManualRecording();
 
   if (chunks.length === 0 || duration < 1) {
-    setStatus('⚠ Grabación muy corta.', 'err');
+    setStatus(t('status.recording_too_short'), 'err');
     return;
   }
 
   // Mostrar la sección con "transcribiendo…"
   manualTranscriptionSection.style.display = 'flex';
   manualTranscriptionText.value = '';
-  manualTranscriptionText.placeholder = '⏳ Transcribiendo…';
+  manualTranscriptionText.placeholder = '⏳ ' + t('status.transcribing');
   btnManualAnswer.disabled = true;
-  setStatus('Transcribiendo grabación…', 'busy');
+  setStatus(t('status.transcribing'), 'busy');
 
   try {
     const blob = new Blob(chunks, { type: mimeType });
     const arrayBuf = await blob.arrayBuffer();
     const base64 = arrayBufferToBase64(arrayBuf);
 
-    const t = await phantom.translate.transcribe({
+    // Ojo: NO usar 'const t' aquí porque 't()' es nuestra función de i18n.
+    const transcription = await phantom.translate.transcribe({
       audioBase64: base64,
       mimeType,
       language: 'auto'
     });
-    const text = (t.text || '').trim();
+    const text = (transcription.text || '').trim();
 
     manualTranscriptionText.value = text || '';
-    manualTranscriptionText.placeholder = text ? '' : '(no se detectó habla)';
+    manualTranscriptionText.placeholder = text ? '' : '(no speech detected)';
     btnManualAnswer.disabled = !text;
-    setStatus(text ? '✓ Transcripción lista — editá si querés y dale a "Contestar".' : '⚠ Sin texto detectado.', text ? 'ok' : 'err');
+    setStatus(text ? t('status.transcription_ready') : t('status.transcription_empty'), text ? 'ok' : 'err');
   } catch (err) {
     console.error('Transcribe manual:', err);
     manualTranscriptionText.placeholder = '⚠ ' + err.message;
     btnManualAnswer.disabled = false;
     setStatus('⚠ ' + err.message, 'err');
   }
+}
+
+// ─── Trading ────────────────────────────────────────────────────
+const TRADING_INDICATORS = [
+  { id: 'rsi',        name: 'RSI',               desc: 'Relative Strength Index (14)' },
+  { id: 'macd',       name: 'MACD',              desc: 'Moving Average Convergence Divergence (12, 26, 9)' },
+  { id: 'bollinger',  name: 'Bollinger Bands',   desc: 'Bollinger Bands (20, 2)' },
+  { id: 'ema20',      name: 'EMA 20',            desc: 'Exponential Moving Average 20' },
+  { id: 'ema50',      name: 'EMA 50',            desc: 'Exponential Moving Average 50' },
+  { id: 'ema200',     name: 'EMA 200',           desc: 'Exponential Moving Average 200' },
+  { id: 'sma50',      name: 'SMA 50',            desc: 'Simple Moving Average 50' },
+  { id: 'sma200',     name: 'SMA 200',           desc: 'Simple Moving Average 200' },
+  { id: 'vwap',       name: 'VWAP',              desc: 'Volume Weighted Average Price' },
+  { id: 'stoch',      name: 'Stochastic',        desc: 'Stochastic Oscillator (14, 3, 3)' },
+  { id: 'atr',        name: 'ATR',               desc: 'Average True Range (14)' },
+  { id: 'adx',        name: 'ADX',               desc: 'Average Directional Index (14)' },
+  { id: 'ichimoku',   name: 'Ichimoku',          desc: 'Ichimoku Cloud (9, 26, 52)' },
+  { id: 'fibonacci',  name: 'Fibonacci',         desc: 'Fibonacci Retracement levels' },
+  { id: 'volume',     name: 'Volume',             desc: 'Volume bars & volume profile' },
+  { id: 'obv',        name: 'OBV',               desc: 'On-Balance Volume' },
+  { id: 'cci',        name: 'CCI',               desc: 'Commodity Channel Index (20)' },
+  { id: 'williams',   name: 'Williams %R',       desc: 'Williams Percent Range (14)' },
+  { id: 'pivot',      name: 'Pivot Points',      desc: 'Pivot Points (Standard)' },
+  { id: 'supertrend', name: 'Supertrend',        desc: 'Supertrend (10, 3)' },
+  { id: 'mfi',        name: 'MFI',               desc: 'Money Flow Index (14)' },
+  { id: 'parabolic',  name: 'Parabolic SAR',     desc: 'Parabolic Stop and Reverse' },
+  { id: 'donchian',   name: 'Donchian',          desc: 'Donchian Channels (20)' },
+  { id: 'keltner',    name: 'Keltner',           desc: 'Keltner Channels (20, 1.5)' },
+  { id: 'cmf',        name: 'CMF',               desc: 'Chaikin Money Flow (20)' },
+  { id: 'roc',        name: 'ROC',               desc: 'Rate of Change (12)' },
+  { id: 'dmi',        name: 'DMI',               desc: 'Directional Movement Index' },
+  { id: 'trix',       name: 'TRIX',              desc: 'Triple Exponential Average' },
+  { id: 'vr',         name: 'Vol Ratio',         desc: 'Volume Ratio' },
+  { id: 'ma_cross',   name: 'MA Cross',          desc: 'Moving Average Crossover signals' }
+];
+
+const tradingPanel = $('trading-panel');
+const tradingChips = $('trading-chips');
+const tradingPicker = $('trading-picker');
+const tradingResult = $('trading-result');
+const tradingResultText = $('trading-result-text');
+const tradingAssetInput = $('trading-asset-input');
+const btnTradingAnalyze = $('btn-trading-analyze');
+
+let tradingActiveIndicators = new Set(['rsi', 'macd', 'ema20', 'ema50', 'bollinger', 'volume']);
+
+function renderTradingChips() {
+  tradingChips.innerHTML = '';
+  tradingActiveIndicators.forEach(id => {
+    const ind = TRADING_INDICATORS.find(i => i.id === id);
+    if (!ind) return;
+    const chip = document.createElement('span');
+    chip.className = 'ti-chip';
+    chip.innerHTML = `${escapeHTML(ind.name)}<span class="chip-remove" data-id="${id}">×</span>`;
+    tradingChips.appendChild(chip);
+  });
+  tradingChips.querySelectorAll('.chip-remove').forEach(el => {
+    el.addEventListener('click', () => {
+      tradingActiveIndicators.delete(el.dataset.id);
+      renderTradingChips();
+      renderTradingPicker();
+      saveTradingIndicators();
+    });
+  });
+}
+
+function renderTradingPicker() {
+  tradingPicker.innerHTML = '';
+  TRADING_INDICATORS.forEach(ind => {
+    const btn = document.createElement('button');
+    btn.className = 'ti-pick' + (tradingActiveIndicators.has(ind.id) ? ' active' : '');
+    btn.textContent = ind.name;
+    btn.title = ind.desc;
+    btn.addEventListener('click', () => {
+      if (tradingActiveIndicators.has(ind.id)) {
+        tradingActiveIndicators.delete(ind.id);
+      } else {
+        tradingActiveIndicators.add(ind.id);
+      }
+      renderTradingChips();
+      renderTradingPicker();
+      saveTradingIndicators();
+    });
+    tradingPicker.appendChild(btn);
+  });
+}
+
+function saveTradingIndicators() {
+  localStorage.setItem('phantom_trading_indicators', JSON.stringify([...tradingActiveIndicators]));
+}
+
+function loadTradingIndicators() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('phantom_trading_indicators'));
+    if (Array.isArray(saved) && saved.length > 0) {
+      tradingActiveIndicators = new Set(saved);
+    }
+  } catch {}
+}
+
+loadTradingIndicators();
+renderTradingChips();
+renderTradingPicker();
+
+function getTradingSystemPrompt(exchangeContext) {
+  const uiLang = (typeof getLanguage === 'function') ? getLanguage() : 'es';
+  const langName = LANG_NAMES[uiLang] || 'Spanish';
+
+  const activeInds = [...tradingActiveIndicators]
+    .map(id => TRADING_INDICATORS.find(i => i.id === id))
+    .filter(Boolean)
+    .map(i => `- ${i.name}: ${i.desc}`)
+    .join('\n');
+
+  const asset = tradingAssetInput.value.trim();
+  const assetLine = asset ? `The user is analyzing: ${asset}` : 'The user has not specified an asset — infer it from the chart if possible.';
+
+  const exchangeSection = exchangeContext ? `
+
+LIVE EXCHANGE DATA:
+The user has connected their exchange account. You have access to their REAL positions, open orders, and account balance.
+Use this data to:
+- Evaluate their current position (entry price, unrealized PnL, liquidation risk)
+- Suggest whether to hold, add to position, take profit, or cut losses
+- Consider their open orders (take profits, stop losses) in your analysis
+- Factor their available margin/balance into risk management
+- Be specific: "Your long from $80,074 is currently +$X, consider taking partial profit at..."
+` : '';
+
+  return `You are a senior professional trader and institutional-grade technical analyst with 15+ years of experience across crypto, equities, forex, and commodities markets. You have managed 8-figure portfolios and specialized in multi-timeframe analysis, order flow, and risk-adjusted position sizing.
+
+YOUR TRADING PHILOSOPHY:
+- Capital preservation ALWAYS comes first. Never recommend entries without clear invalidation levels.
+- You think in probabilities, not certainties. Every setup has a win rate and expected value.
+- You size positions based on account risk (1-2% max per trade) and volatility (ATR-based).
+- You understand market microstructure: liquidity pools, stop hunts, institutional order blocks.
+- You read price action in context — a hammer at support after a flush means something different than one mid-range.
+
+${assetLine}
+
+INDICATORS IN YOUR TOOLKIT (apply deep knowledge even if not all visible on chart):
+${activeInds}
+${exchangeSection}
+
+DELIVER YOUR ANALYSIS IN THIS EXACT STRUCTURE AND ORDER:
+${exchangeContext ? `
+===========================================================
+**SECTION 0 — 💼 YOUR OPEN POSITION** (MUST BE FIRST — THIS IS THE MOST IMPORTANT SECTION)
+===========================================================
+This section MUST appear FIRST, before ANY technical analysis. The user connected their exchange — they want to know about THEIR money immediately.
+
+Analyze their current open position(s) in detail:
+- **Position Summary**: Side (LONG/SHORT), size, entry price, current price, unrealized PnL, margin used, liquidation price
+- **Position Health**: Is it in danger? How far from liquidation? Is the margin adequate?
+- **Verdict on Position**: HOLD / ADD / REDUCE / CLOSE — be decisive, explain why
+- **Immediate Actions**: Specific advice like "Move SL to $X", "Take 50% profit NOW at $X", "Your liquidation at $X is dangerously close"
+- **Open Orders Review**: Are their TP/SL orders well placed? Suggest adjustments with exact prices
+
+If they have NO open positions, say "No open positions detected" and suggest whether NOW is a good time to enter.
+` : ''}
+---
+
+**SECTION 1 — ⏱ Market Context**
+Timeframe, trend phase (accumulation/markup/distribution/markdown per Wyckoff), current structure (HH/HL or LH/LL), and where we are relative to the daily/weekly bias.
+
+**SECTION 2 — 🔑 Critical Levels**
+Key S/R with reasoning. Identify institutional levels, liquidity zones, order blocks and FVGs.
+
+**SECTION 3 — 📊 Indicator Confluence**
+For each active indicator, give a TRADER'S reading with context, not just numbers. Identify confirmations, contradictions, and divergences.
+
+**SECTION 4 — 📈 Volume & Order Flow**
+Volume profile interpretation, buying vs selling pressure, what it tells about institutional participation.
+
+**SECTION 5 — 🔍 Pattern & Structure**
+Chart patterns with measured move targets. Candlestick patterns at key levels.
+
+**SECTION 6 — ⚠️ Risk Factors**
+What could go wrong: upcoming events, funding rates, OI shifts, correlation risks.
+
+===========================================================
+**SECTION 7 — 📊 PROBABILITY & BIAS** (MANDATORY — use this EXACT format)
+===========================================================
+You MUST end with a probability assessment using this EXACT format (the app will parse and render this as a visual bar):
+
+[BIAS_BAR]
+LONG: XX% | SHORT: YY%
+[/BIAS_BAR]
+
+Where XX + YY = 100. Be honest with your assessment.
+
+===========================================================
+**SECTION 8 — 🎯 TRADE SETUPS** (MANDATORY — use these EXACT formats)
+===========================================================
+Provide BOTH long and short setups with exact prices. Use these EXACT tags so the app renders them as visual cards:
+
+[TRADE_LONG]
+ENTRY: $XXXXX - $XXXXX
+SL: $XXXXX
+TP1: $XXXXX (R:R X:X)
+TP2: $XXXXX (R:R X:X)
+TP3: $XXXXX (R:R X:X)
+SIZE: X% of capital
+[/TRADE_LONG]
+
+[TRADE_SHORT]
+ENTRY: $XXXXX - $XXXXX
+SL: $XXXXX
+TP1: $XXXXX (R:R X:X)
+TP2: $XXXXX (R:R X:X)
+TP3: $XXXXX (R:R X:X)
+SIZE: X% of capital
+[/TRADE_SHORT]
+
+===========================================================
+**SECTION 9 — 📐 CHART PATTERNS** (use when you identify a pattern)
+===========================================================
+When you identify a chart pattern, insert the corresponding tag INLINE in your analysis. The app will render a beautiful SVG illustration.
+
+Available pattern tags (use the EXACT tag):
+[PATTERN:bull_flag] [PATTERN:bear_flag]
+[PATTERN:ascending_triangle] [PATTERN:descending_triangle] [PATTERN:symmetrical_triangle]
+[PATTERN:double_top] [PATTERN:double_bottom]
+[PATTERN:head_shoulders] [PATTERN:inv_head_shoulders]
+[PATTERN:rising_wedge] [PATTERN:falling_wedge]
+[PATTERN:cup_handle]
+[PATTERN:channel_up] [PATTERN:channel_down]
+[PATTERN:engulfing_bull] [PATTERN:engulfing_bear]
+[PATTERN:hammer] [PATTERN:doji]
+
+You can add a caption: [PATTERN:bull_flag "Forming on 4H since May 10"]
+Use 1-3 patterns per analysis — only the ones you actually see on the chart. Don't force patterns that aren't there.
+
+STYLE RULES:
+- Be decisive. Give your actual bias, don't hedge with "it could go either way."
+- Use exact prices and percentages — always with $ sign for prices.
+- If the setup isn't there, say "NO TRADE" — the best trade is sometimes no trade.
+- Think like a prop trader: what's the edge, what's the risk, what's the plan?
+- Reference multi-timeframe context when relevant.
+- When mentioning LONG positions, profits, bullish signals, TPs hit → these are POSITIVE (green).
+- When mentioning SHORT positions, losses, bearish signals, SL hit → these are NEGATIVE (red).
+- Always use $ before prices so the UI can colorize them.
+
+⚠️ DISCLAIMER: Educational analysis only. Not financial advice.
+
+🌐 LANGUAGE — Reply ALWAYS in ${langName} (${uiLang}).`;
+}
+
+// Fetch exchange data (positions, orders, balance, ticker) if configured
+async function fetchExchangeData() {
+  const cfg = await phantom.config.get();
+  console.log('[Trading] Exchange config:', cfg.exchangeProvider, '| key:', cfg.exchangeKey ? 'SET' : 'EMPTY', '| secret:', cfg.exchangeSecret ? 'SET' : 'EMPTY');
+  if (!cfg.exchangeProvider || !cfg.exchangeKey || !cfg.exchangeSecret) {
+    console.log('[Trading] No exchange configured, skipping data fetch');
+    return null;
+  }
+  try {
+    // Guardar el asset actual en config para que main.js lo use
+    const asset = tradingAssetInput.value.trim();
+    await phantom.config.set({ ...cfg, tradingAsset: asset });
+    console.log('[Trading] Fetching exchange data for:', asset || '(no asset)');
+    const data = await phantom.exchange.fetch({ type: 'all' });
+    console.log('[Trading] Exchange data received:', JSON.stringify(data).slice(0, 500));
+    return data;
+  } catch (err) {
+    console.error('[Trading] Exchange fetch error:', err);
+    return { error: err.message };
+  }
+}
+
+function formatExchangeDataForPrompt(data) {
+  if (!data || data.error) return '';
+  const parts = [];
+
+  if (data.ticker) {
+    parts.push(`📊 REAL-TIME TICKER (${data.tickerSource || 'exchange'}):`);
+    if (data.ticker.price) parts.push(`  Price: ${data.ticker.price}`);
+    if (data.ticker.bestBid) parts.push(`  Best Bid: ${data.ticker.bestBid}`);
+    if (data.ticker.bestAsk) parts.push(`  Best Ask: ${data.ticker.bestAsk}`);
+    if (data.ticker.size) parts.push(`  Volume: ${data.ticker.size}`);
+  }
+
+  if (data.positions && data.positions.length > 0) {
+    parts.push(`\n📋 OPEN POSITIONS:`);
+    data.positions.forEach(p => {
+      // KuCoin format
+      if (p.symbol) {
+        const side = p.currentQty > 0 ? 'LONG' : 'SHORT';
+        parts.push(`  ${p.symbol} | ${side} | Qty: ${Math.abs(p.currentQty || p.positionAmt || 0)} | Entry: ${p.avgEntryPrice || p.entryPrice || '?'} | Mark: ${p.markPrice || '?'} | PnL: ${p.unrealisedPnl || p.unRealizedProfit || '?'} | Margin: ${p.posCost || p.initialMargin || '?'} | Liq: ${p.liquidationPrice || '?'}`);
+      }
+    });
+  }
+
+  if (data.orders && data.orders.length > 0) {
+    parts.push(`\n📝 OPEN ORDERS:`);
+    data.orders.forEach(o => {
+      parts.push(`  ${o.symbol || '?'} | ${o.side || o.type || '?'} | Price: ${o.price || '?'} | Size: ${o.size || o.origQty || '?'} | Type: ${o.type || o.orderType || '?'} | Stop: ${o.stopPrice || o.stop || '-'}`);
+    });
+  }
+
+  if (data.balance) {
+    parts.push(`\n💰 ACCOUNT BALANCE:`);
+    if (Array.isArray(data.balance)) {
+      // Binance
+      data.balance.forEach(b => {
+        parts.push(`  ${b.asset}: ${b.balance} (available: ${b.availableBalance || b.free || '?'})`);
+      });
+    } else {
+      // KuCoin
+      parts.push(`  Available: ${data.balance.availableBalance || data.balance.marginBalance || '?'}`);
+      parts.push(`  Unrealized PnL: ${data.balance.unrealisedPNL || '?'}`);
+      if (data.balance.currency) parts.push(`  Currency: ${data.balance.currency}`);
+    }
+  }
+
+  return parts.length > 0 ? '\n\n--- LIVE EXCHANGE DATA ---\n' + parts.join('\n') : '';
+}
+
+btnTradingAnalyze.addEventListener('click', async () => {
+  if (state.busy) return;
+  if (tradingActiveIndicators.size === 0) {
+    setStatus(t('trading.no_indicators'), 'err');
+    return;
+  }
+
+  state.busy = true;
+  expandPanel('trading-panel');
+  tradingResult.style.display = 'block';
+  tradingResultText.innerHTML = '<div class="skeleton"></div><div class="skeleton" style="width:80%"></div>';
+  setStatus(t('trading.analyzing'), 'busy');
+
+  try {
+    // Fetch screenshot + exchange data in parallel
+    const [screenshot, exchangeData] = await Promise.all([
+      captureScreen(),
+      fetchExchangeData()
+    ]);
+    if (!screenshot) throw new Error('No se pudo capturar la pantalla');
+
+    const exchangeContext = formatExchangeDataForPrompt(exchangeData);
+    const system = getTradingSystemPrompt(exchangeContext);
+    const uiLang = (typeof getLanguage === 'function') ? getLanguage() : 'es';
+    const userTexts = {
+      es: 'Analizá este gráfico de trading con los indicadores seleccionados. Dame tu análisis técnico completo.',
+      en: 'Analyze this trading chart with the selected indicators. Give me your complete technical analysis.',
+      pt: 'Analise este gráfico de trading com os indicadores selecionados. Dê-me sua análise técnica completa.',
+      fr: 'Analysez ce graphique de trading avec les indicateurs sélectionnés. Donnez-moi votre analyse technique complète.',
+      ja: '選択したインジケーターでこのトレーディングチャートを分析してください。完全なテクニカル分析をお願いします。',
+      zh: '使用选定的指标分析此交易图表。给我完整的技术分析。'
+    };
+    let userPrompt = userTexts[uiLang] || userTexts.es;
+    if (exchangeContext) {
+      userPrompt += '\n\n' + exchangeContext;
+    }
+
+    const messages = [{
+      role: 'user',
+      content: await buildContent(userPrompt, screenshot)
+    }];
+
+    // Use dedicated trading model if configured
+    const tradingCfg = await phantom.config.get();
+    const tradingModel = tradingCfg.tradingModel || null;
+    const resp = await phantom.ai.call({ messages, system, model: tradingModel, maxTokens: 4096 });
+    tradingResultText.innerHTML = renderTradingMarkdown(resp.text);
+    setStatus(t('trading.analysis_ready'), 'ok');
+
+    const bodyEl = document.querySelector('.body');
+    if (bodyEl) tradingResult.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    state.messages = [
+      { role: 'user', content: userPrompt },
+      { role: 'assistant', content: resp.text }
+    ];
+    state.mode = 'trading';
+    chatWrap.style.display = 'flex';
+  } catch (err) {
+    tradingResultText.innerHTML = '<em style="color:#dc2626">' + escapeHTML(err.message) + '</em>';
+    setStatus('⚠ ' + err.message, 'err');
+  } finally {
+    state.busy = false;
+  }
+});
+
+function applyTradingPanelVisibility(on) {
+  tradingPanel.style.display = on ? 'flex' : 'none';
+  if (on) {
+    phantom.window.resize({ width: 680, height: 900 });
+  } else {
+    // Limpiar conversación y resultado de trading al desactivar
+    if (state.mode === 'trading') {
+      state.messages = [];
+      state.mode = null;
+      conversationEl.innerHTML = '';
+      chatWrap.style.display = 'none';
+      setDanger(false);
+    }
+    const tr = $('trading-result');
+    const trt = $('trading-result-text');
+    if (tr) tr.style.display = 'none';
+    if (trt) trt.innerHTML = '';
+    if (!$('cfg-translate').checked && !$('cfg-interview').checked) {
+      phantom.window.resize({ width: 420, height: 600 });
+    }
+  }
+}
+
+$('cfg-trading').addEventListener('change', (e) => {
+  applyTradingPanelVisibility(e.target.checked);
+});
+
+// Exchange keys visibility
+$('cfg-exchange-provider').addEventListener('change', (e) => {
+  updateExchangeKeysVisibility(e.target.value);
+});
+
+function updateExchangeKeysVisibility(provider) {
+  const keysGroup = $('exchange-keys-group');
+  const passphraseGroup = $('exchange-passphrase-group');
+  keysGroup.style.display = provider ? 'block' : 'none';
+  // Solo KuCoin necesita passphrase
+  if (passphraseGroup) passphraseGroup.style.display = provider === 'kucoin' ? 'block' : 'none';
 }
 
 function setDanger(on) {

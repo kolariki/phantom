@@ -106,10 +106,15 @@ code {
 .hero h1 em {
   font-style: italic;
   display: inline-block;
-  /* Padding generoso para que el clip del gradiente nunca corte los descenders/italic */
-  padding: 0.15em 0.12em 0.3em 0.12em;
-  /* Negative margins para que ese padding NO afecte el layout (la línea queda igual) */
-  margin: -0.15em -0.12em -0.3em -0.12em;
+  /* Padding vertical generoso para que el clip del gradiente cubra descenders del italic */
+  padding-top: 0.18em;
+  padding-bottom: 0.32em;
+  /* Padding horizontal mínimo para italic-lean sin pegar al texto vecino */
+  padding-left: 0.06em;
+  padding-right: 0.06em;
+  /* Solo el negative margin vertical: arregla el corte y NO afecta el layout horizontal */
+  margin-top: -0.18em;
+  margin-bottom: -0.32em;
   /* Gradiente igual al botón de Download (navy → blue) */
   background: linear-gradient(135deg, var(--navy) 0%, var(--blue) 100%);
   -webkit-background-clip: text;
@@ -117,6 +122,15 @@ code {
   -webkit-text-fill-color: transparent;
   color: transparent;
   line-height: 1.2;
+}
+
+/* CJK (chino, japonés): NO usan italic real. El browser lo finge con skew y
+   eso causa cortes del clip. Desactivamos italic y reducimos padding. */
+:lang(zh) .hero h1 em,
+:lang(ja) .hero h1 em {
+  font-style: normal;
+  padding: 0.1em 0.12em;
+  margin: -0.1em 0;
 }
 .lead {
   font-size: 19px;
@@ -152,6 +166,11 @@ code {
   transform: translateY(-2px);
   box-shadow: 0 14px 32px rgba(59, 130, 246, 0.5);
 }
+.btn-primary strong {
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: 0.5px;
+}
 .btn-primary.big {
   padding: 18px 32px;
   font-size: 17px;
@@ -159,10 +178,44 @@ code {
 .btn-link { color: var(--muted); font-weight: 600; font-size: 14px; }
 .btn-link:hover { color: var(--blue); }
 .meta {
-  font-size: 13px;
-  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--navy);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.10), rgba(168, 85, 247, 0.10));
+  border: 1.5px solid rgba(59, 130, 246, 0.35);
+  border-radius: 999px;
+  padding: 10px 22px;
+  margin: 4px auto 0;
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.18);
+  /* Pulso constante — como llamando la atención */
+  animation: meta-pulse 2.4s ease-in-out infinite;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
 }
-.dot-sep { margin: 0 8px; opacity: 0.5; }
+.meta:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 12px 30px rgba(59, 130, 246, 0.35);
+  animation-play-state: paused;
+}
+@keyframes meta-pulse {
+  0%, 100% {
+    box-shadow:
+      0 6px 20px rgba(59, 130, 246, 0.18),
+      0 0 0 0 rgba(59, 130, 246, 0.45);
+    border-color: rgba(59, 130, 246, 0.35);
+  }
+  50% {
+    box-shadow:
+      0 8px 26px rgba(59, 130, 246, 0.28),
+      0 0 0 8px rgba(59, 130, 246, 0);
+    border-color: rgba(59, 130, 246, 0.6);
+  }
+}
+.dot-sep { margin: 0 4px; opacity: 0.6; color: var(--blue); font-weight: 900; }
 
 /* ─── Mockup section ──────────────────────────── */
 .mockup-section {
@@ -183,6 +236,11 @@ code {
   font-size: 16px;
   color: var(--muted);
   margin-bottom: 60px;
+}
+
+.stage2-title {
+  margin-top: 80px;
+  margin-bottom: 8px;
 }
 
 /* ─── Stage: tres columnas (labels izq / screenshot / labels der) ─── */
@@ -247,18 +305,21 @@ code {
   transition: filter 0.3s ease;
 }
 
-/* SPOTLIGHT — oscurece todo y deja un "agujero" iluminado sobre el feature */
+/* SPOTLIGHT — oscurece todo y deja un "agujero" iluminado sobre el feature.
+   Sin `border` (que cubre contenido). El "marco" azul lo hacemos con box-shadow
+   que se dibuja FUERA de la caja, así no come 2px del contenido del screenshot. */
 .spotlight {
   position: absolute;
   pointer-events: none;
-  border: 2px solid #3b82f6;
-  border-radius: 8px;
+  border-radius: 9px;
   opacity: 0;
-  /* La sombra gigante crea el efecto "todo oscuro menos lo de adentro" */
   box-shadow:
-    0 0 0 9999px rgba(15, 23, 42, 0.62),
-    0 0 24px rgba(59, 130, 246, 0.4),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+    /* 1) Anillo azul "borde" — pintado FUERA del box, no tapa contenido */
+    0 0 0 2px rgba(59, 130, 246, 0.95),
+    /* 2) Glow suave azul alrededor */
+    0 0 24px rgba(59, 130, 246, 0.55),
+    /* 3) Oscurece todo lo demás del screenshot */
+    0 0 0 9999px rgba(15, 23, 42, 0.62);
   transition:
     opacity 0.25s ease,
     top 0.35s cubic-bezier(0.34, 1.2, 0.64, 1),
@@ -292,6 +353,188 @@ code {
   .overlay-arrows { display: none; }
   .feat, .label-col-right .feat { text-align: left; }
 }
+
+/* ─── Video Demos ─────────────────────────────── */
+.demos-section {
+  padding: 80px 32px 60px;
+  text-align: center;
+  background: linear-gradient(180deg, #fafbfc 0%, #f8faff 50%, #fafbfc 100%);
+}
+.demos-section h2 {
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--navy);
+  margin-bottom: 12px;
+}
+.demos-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 40px;
+  max-width: 800px;
+  margin: 0 auto;
+}
+.demo-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 12px 36px rgba(15, 23, 42, 0.08);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.demo-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.14);
+}
+.demo-video-wrap {
+  position: relative;
+  background: #0f172a;
+  overflow: hidden;
+}
+.demo-video-wrap video {
+  width: 100%;
+  display: block;
+  border-radius: 0;
+  max-height: 420px;
+  object-fit: contain;
+  background: #000;
+}
+.demo-info {
+  padding: 20px 24px;
+  text-align: left;
+}
+.demo-info h3 {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--navy);
+  margin-bottom: 8px;
+}
+.demo-info p {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+@media (max-width: 600px) {
+  .demos-section { padding: 40px 16px; }
+  .demos-grid { gap: 24px; }
+  .demo-info { padding: 16px; }
+  .demo-info h3 { font-size: 16px; }
+}
+
+/* ─── Pricing ──────────────────────────────────── */
+.pricing-section {
+  padding: 100px 32px 60px;
+  text-align: center;
+  background: linear-gradient(180deg, #fafbfc 0%, #f0f6ff 100%);
+}
+.pricing-section h2 {
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--navy);
+  margin-bottom: 12px;
+}
+.price-card {
+  max-width: 480px;
+  margin: 50px auto 30px;
+  background: #fff;
+  border: 2px solid var(--blue);
+  border-radius: 20px;
+  padding: 40px 32px 32px;
+  box-shadow: 0 30px 60px rgba(59, 130, 246, 0.18);
+  position: relative;
+  text-align: center;
+}
+.price-badge {
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(135deg, var(--navy), var(--blue));
+  color: #fff;
+  padding: 6px 16px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  box-shadow: 0 6px 14px rgba(59, 130, 246, 0.32);
+}
+.price-card h3 {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--navy);
+  margin-bottom: 18px;
+}
+.price-amount {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+  margin-bottom: 28px;
+}
+.price-currency {
+  font-size: 32px;
+  font-weight: 800;
+  color: var(--navy);
+  vertical-align: top;
+}
+.price-number {
+  font-size: 68px;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  background: linear-gradient(135deg, var(--navy), var(--blue));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  line-height: 1;
+}
+.price-once {
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 600;
+  margin-left: 6px;
+}
+.price-features {
+  list-style: none;
+  text-align: left;
+  margin: 0 auto 28px;
+  max-width: 360px;
+  padding: 0;
+}
+.price-features li {
+  padding: 8px 0;
+  font-size: 14px;
+  color: var(--text);
+  border-bottom: 1px dashed #e2e8f0;
+}
+.price-features li:last-child { border-bottom: none; }
+
+.pricing-btn {
+  width: 100%;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+.pricing-btn strong { color: #fff; font-weight: 900; }
+
+.price-trust {
+  font-size: 11.5px;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+}
+.pricing-note {
+  max-width: 600px;
+  margin: 30px auto 0;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.pricing-note strong { color: var(--text); }
+.pricing-note a { font-weight: 700; }
 
 /* ─── Atajos ──────────────────────────────────── */
 .shortcuts {

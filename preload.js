@@ -29,12 +29,24 @@ contextBridge.exposeInMainWorld('phantom', {
     transcribe: (payload) => ipcRenderer.invoke('whisper:transcribe', payload),
     text: (payload) => ipcRenderer.invoke('translate:text', payload)
   },
+  deepgram: {
+    start: (opts) => ipcRenderer.invoke('deepgram:start', opts),
+    stop: () => ipcRenderer.invoke('deepgram:stop'),
+    sendAudio: (int16Buffer) => ipcRenderer.send('deepgram:audio', int16Buffer)
+  },
+  exchange: {
+    fetch: (opts) => ipcRenderer.invoke('exchange:fetch', opts)
+  },
   interview: {
     answer: (payload) => ipcRenderer.invoke('interview:answer', payload),
-    readFile: (path) => ipcRenderer.invoke('file:read-text', path)
+    readFile: (path) => ipcRenderer.invoke('file:read-text', path),
+    pickCV: () => ipcRenderer.invoke('file:pick-and-extract-cv')
   },
   on: (channel, fn) => {
-    const allowed = ['shortcut:analyze', 'shortcut:answer', 'opacity:changed'];
+    const allowed = [
+      'shortcut:analyze', 'shortcut:answer', 'opacity:changed',
+      'deepgram:interim', 'deepgram:final', 'deepgram:error'
+    ];
     if (allowed.includes(channel)) {
       ipcRenderer.on(channel, (_e, ...args) => fn(...args));
     }

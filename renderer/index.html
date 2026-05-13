@@ -83,6 +83,34 @@
         </div>
       </div>
 
+      <div class="trading-panel collapsible-panel" id="trading-panel" style="display:none;">
+        <div class="trading-header collapsible-header">
+          <span class="collapse-chevron">▾</span>
+          <span class="trading-title" data-i18n="trading.title">📈 Trading</span>
+          <div class="trading-controls">
+            <button class="btn btn-mini" id="btn-trading-analyze" data-i18n="trading.analyze">Analizar</button>
+          </div>
+        </div>
+        <div class="collapsible-body">
+          <div class="trading-indicators">
+            <div class="ti-label" data-i18n="trading.indicators_label">Indicadores activos</div>
+            <div class="ti-chips" id="trading-chips"></div>
+            <details class="trading-indicator-picker">
+              <summary data-i18n="trading.add_indicators">+ Agregar indicadores</summary>
+              <div class="ti-picker-grid" id="trading-picker"></div>
+            </details>
+          </div>
+          <div class="trading-asset">
+            <label class="ti-label" data-i18n="trading.asset_label">Activo (opcional)</label>
+            <input type="text" id="trading-asset-input" data-i18n-placeholder="trading.asset_placeholder" />
+          </div>
+          <div class="trading-result" id="trading-result" style="display:none;">
+            <div class="ti-label" data-i18n="trading.analysis_label">Análisis</div>
+            <div class="tr-text" id="trading-result-text"></div>
+          </div>
+        </div>
+      </div>
+
       <div class="settings-panel" id="settings-panel" style="display:none;">
 
         <!-- ─── IDIOMA DE LA APP ─── -->
@@ -165,7 +193,13 @@
         </label>
 
         <div class="setting-group">
-          <label class="setting-label" data-i18n="settings.openai_key">OpenAI Key (para Whisper)</label>
+          <label class="setting-label" data-i18n="settings.deepgram_key">Deepgram Key (streaming real-time)</label>
+          <input type="password" id="cfg-deepgram-key" placeholder="dg-..." autocomplete="off" />
+          <div class="hint" data-i18n="settings.deepgram_key_hint" style="font-size:10px;padding:4px 0;background:none;border:none;"></div>
+        </div>
+
+        <div class="setting-group">
+          <label class="setting-label" data-i18n="settings.openai_key">OpenAI Key (Whisper — fallback)</label>
           <input type="password" id="cfg-openai-key" placeholder="sk-..." autocomplete="off" />
           <div class="hint" data-i18n="settings.openai_key_hint" style="font-size:10px;padding:4px 0;background:none;border:none;"></div>
         </div>
@@ -195,6 +229,56 @@
               <option value="it" data-i18n="settings.lang.it">Italiano</option>
               <option value="de" data-i18n="settings.lang.de">Alemán</option>
             </select>
+          </div>
+        </div>
+
+        <div class="setting-divider" data-i18n="settings.trading_divider">📈 Trading</div>
+
+        <label class="checkbox-row">
+          <input type="checkbox" id="cfg-trading" />
+          <span data-i18n="settings.trading_enable">Activar análisis de gráficos de trading</span>
+        </label>
+
+        <div class="setting-group">
+          <label class="setting-label" data-i18n="settings.trading_model">Modelo Trading</label>
+          <select id="cfg-trading-model">
+            <option value="">— Usar modelo general —</option>
+            <optgroup label="Anthropic">
+              <option value="claude-sonnet-4-20250514">Claude Sonnet 4 (Recomendado)</option>
+              <option value="claude-opus-4-20250514">Claude Opus 4 (Máximo)</option>
+              <option value="claude-haiku-4-5">Claude Haiku 4.5 (Rápido)</option>
+            </optgroup>
+            <optgroup label="OpenAI">
+              <option value="gpt-4o">GPT-4o</option>
+              <option value="gpt-4o-mini">GPT-4o Mini</option>
+              <option value="o3">o3 (Razonamiento)</option>
+            </optgroup>
+          </select>
+          <div class="hint" data-i18n="settings.trading_model_hint" style="font-size:10px;padding:4px 0;background:none;border:none;">Modelo dedicado para análisis de trading. Claude Sonnet 4 u Opus 4 dan los mejores análisis.</div>
+        </div>
+
+        <div class="setting-group">
+          <label class="setting-label" data-i18n="settings.exchange_provider">Exchange</label>
+          <select id="cfg-exchange-provider">
+            <option value="">— Sin exchange —</option>
+            <option value="kucoin">KuCoin</option>
+            <option value="binance">Binance</option>
+          </select>
+          <div class="hint" data-i18n="settings.exchange_hint" style="font-size:10px;padding:4px 0;background:none;border:none;"></div>
+        </div>
+
+        <div id="exchange-keys-group" style="display:none;">
+          <div class="setting-group">
+            <label class="setting-label" data-i18n="settings.exchange_key">API Key</label>
+            <input type="password" id="cfg-exchange-key" placeholder="API Key" autocomplete="off" />
+          </div>
+          <div class="setting-group">
+            <label class="setting-label" data-i18n="settings.exchange_secret">API Secret</label>
+            <input type="password" id="cfg-exchange-secret" placeholder="Secret" autocomplete="off" />
+          </div>
+          <div class="setting-group" id="exchange-passphrase-group">
+            <label class="setting-label" data-i18n="settings.exchange_passphrase">Passphrase (KuCoin)</label>
+            <input type="password" id="cfg-exchange-passphrase" placeholder="Passphrase" autocomplete="off" />
           </div>
         </div>
 

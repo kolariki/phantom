@@ -1,6 +1,6 @@
 {
   "name": "phantom-desktop",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Phantom — copiloto IA invisible para macOS. Lee tu pantalla, contesta y se oculta del screen-share.",
   "main": "main.js",
   "author": "Elevum",
@@ -28,7 +28,10 @@
     "mac": {
       "category": "public.app-category.productivity",
       "icon": "assets/icon-1024.png",
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "identity": "Ivan Kolarik (U858VRJWB9)",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
@@ -55,5 +58,10 @@
     "directories": {
       "output": "dist"
     }
+  },
+  "dependencies": {
+    "mammoth": "^1.12.0",
+    "pdf-parse": "^1.1.4",
+    "ws": "^8.20.1"
   }
 }
