@@ -26,6 +26,22 @@ const LANG_NAMES = {
   fr: 'French',  ja: 'Japanese', zh: 'Chinese'
 };
 
+/**
+ * User-facing chart-analysis instruction, localized per UI language.
+ * Used by manual analyze button AND auto-analysis to keep them consistent.
+ */
+const CHART_ANALYSIS_PROMPTS = {
+  es: 'Analizá estos gráficos de trading. La PRIMERA imagen es el gráfico de 15m, la SEGUNDA es el de 1H y la TERCERA es el de 4H. Usá los tres timeframes para tu análisis multi-timeframe completo. RESPONDÉ EN ESPAÑOL.',
+  en: 'Analyze these trading charts. The FIRST image is the 15m chart, the SECOND is the 1H chart and the THIRD is the 4H chart. Use all three timeframes for your complete multi-timeframe analysis. RESPOND IN ENGLISH.',
+  pt: 'Analise estes gráficos de trading. A PRIMEIRA imagem é o gráfico de 15m, a SEGUNDA é o de 1H e a TERCEIRA é o de 4H. Use os três timeframes para sua análise multi-timeframe completa. RESPONDA EM PORTUGUÊS.',
+  fr: 'Analysez ces graphiques de trading. La PREMIÈRE image est le graphique 15m, la DEUXIÈME le 1H et la TROISIÈME le 4H. Utilisez les trois timeframes pour votre analyse multi-timeframe complète. RÉPONDEZ EN FRANÇAIS.',
+  ja: 'これらのトレーディングチャートを分析してください。最初の画像は15分足、2番目は1時間足、3番目は4時間足です。3つの時間枠すべてを使用して、完全なマルチタイムフレーム分析を行ってください。日本語で回答してください。',
+  zh: '分析这些交易图表。第一张图片是15分钟图表，第二张是1小时图表，第三张是4小时图表。使用所有三个时间框架进行完整的多时间框架分析。请用中文回答。'
+};
+function chartAnalysisPrompt(lang) {
+  return CHART_ANALYSIS_PROMPTS[lang] || CHART_ANALYSIS_PROMPTS.es;
+}
+
 const SECURITY_RULE = `SECURITY: If you detect phishing, scam, fraud or deception, begin your reply with the marker on a line by itself:
 [[PHISHING_DETECTED]]
 then briefly explain why, what to do (don't click, delete, block, report) and the warning signs.`;
@@ -35,7 +51,11 @@ function getSystemPrompt(action) {
   const uiLang = (typeof getLanguage === 'function') ? getLanguage() : 'es';
   const langName = LANG_NAMES[uiLang] || 'Spanish';
 
-  const langRule = `🌐 LANGUAGE — CRITICAL: Reply ALWAYS in ${langName} (${uiLang}), regardless of what language is shown in the screenshot or the user's previous messages. The user's app interface is set to ${langName}, so they expect responses in ${langName}.`;
+  // Default a la UI, pero respetar override explícito del usuario en el chat
+  // (ej: "answer in English", "responde en portugués"). Esto era un bug: la
+  // regla anterior decía "regardless of user's previous messages" y bloqueaba
+  // que el modelo cambiara de idioma cuando el user lo pedía a mano.
+  const langRule = `🌐 LANGUAGE: Default to ${langName} (${uiLang}) — the user's app is set to that language. EXCEPTION: if the user explicitly asks in the conversation to switch language (e.g. "answer in English", "responde en portugués", "in French please"), respect that instruction and reply in the requested language for that turn onwards.`;
 
   if (action === 'resumir') {
     return `You are an assistant that receives a screenshot of the user's screen and returns a clear, concise summary.
@@ -46,11 +66,18 @@ ${langRule}
 
 ${SECURITY_RULE}`;
   }
-  return `You are an expert assistant that receives a screenshot of the user's screen and must answer or solve what is shown.
-If there's an explicit question, answer directly.
-If there's a problem (exercise, calculation, code, decision), solve it step by step.
-If there are multiple-choice options, indicate the correct one and why.
-Don't pad. If info is missing to solve, say so.
+  return `You are answering the question or solving the problem visible in the screenshot, AS IF YOU WERE THE USER.
+Give the direct answer/response — NOT instructions about the UI or "click here, then there".
+
+How to behave:
+- If the screenshot shows a question (survey, exam, form, interview, quiz): write the actual answer the user would give. Speak in first person ("Yes, I have…", "I would say…"). Do NOT describe buttons, do NOT say "click Answer now then select Yes". The user already sees the buttons; they want the CONTENT of the answer.
+- If it's a multiple-choice question: pick the right option and explain in 1-2 sentences why.
+- If it's a coding/math problem: solve it, show the answer.
+- If it's a decision (which one is better, what should I do): give your recommendation directly.
+- Only describe the UI if the user EXPLICITLY asks "what's on screen" / "describe the page".
+- If the user gives a constraint in chat ("answer yes", "say no", "respond in English", "be brief"): obey that constraint, overriding any default behavior.
+- Keep responses concise. No padding, no preambles like "Sure! Here's the answer:".
+- If info on screen is genuinely missing to answer, say what's missing in one line.
 
 ${langRule}
 
@@ -61,12 +88,30 @@ ${SECURITY_RULE}`;
 function getUserPrompt(action) {
   const uiLang = (typeof getLanguage === 'function') ? getLanguage() : 'es';
   const prompts = {
-    es: { resumir: 'Resumí lo que se ve en esta captura.', responder: 'Identificá la pregunta o problema visible en esta captura y resolvelo.' },
-    en: { resumir: 'Summarize what is shown in this screenshot.', responder: 'Identify the question or problem visible in this screenshot and solve it.' },
-    pt: { resumir: 'Resuma o que está visível nesta captura.', responder: 'Identifique a pergunta ou problema visível nesta captura e resolva.' },
-    fr: { resumir: "Résumez ce qui est visible dans cette capture d'écran.", responder: "Identifiez la question ou le problème visible dans cette capture d'écran et résolvez-le." },
-    ja: { resumir: 'このスクリーンショットに表示されている内容を要約してください。', responder: 'このスクリーンショットに表示されている質問または問題を特定し、解決してください。' },
-    zh: { resumir: '总结此截图中显示的内容。', responder: '识别此截图中的问题并解决它。' }
+    es: {
+      resumir: 'Resumí lo que se ve en esta captura.',
+      responder: 'Mirá la pantalla y dame la respuesta a la pregunta visible (o resolución del problema), como si fueras yo respondiendo. No describas botones ni cómo navegar.'
+    },
+    en: {
+      resumir: 'Summarize what is shown in this screenshot.',
+      responder: 'Look at the screen and give me the answer to the visible question (or solve the visible problem), as if you were me answering it. Do not describe buttons or how to navigate.'
+    },
+    pt: {
+      resumir: 'Resuma o que está visível nesta captura.',
+      responder: 'Olhe a tela e me dê a resposta para a pergunta visível (ou a solução do problema), como se você fosse eu respondendo. Não descreva botões ou como navegar.'
+    },
+    fr: {
+      resumir: "Résumez ce qui est visible dans cette capture d'écran.",
+      responder: "Regardez l'écran et donnez-moi la réponse à la question visible (ou la solution du problème), comme si vous étiez moi en train de répondre. Ne décrivez pas les boutons ni la navigation."
+    },
+    ja: {
+      resumir: 'このスクリーンショットに表示されている内容を要約してください。',
+      responder: '画面を見て、表示されている質問への回答（または問題の解決策）を、私が答えるかのように直接教えてください。ボタンや操作方法の説明は不要です。'
+    },
+    zh: {
+      resumir: '总结此截图中显示的内容。',
+      responder: '查看屏幕，直接给我可见问题的答案（或问题的解决方案），就像你是我在回答一样。不要描述按钮或如何导航。'
+    }
   };
   return (prompts[uiLang] || prompts.es)[action];
 }
@@ -101,15 +146,30 @@ function getUserPrompt(action) {
   $('cfg-interview-language').value = cfg.interviewLanguage || 'auto';
   // Trading
   $('cfg-trading').checked = !!cfg.tradingEnabled;
-  $('cfg-trading-model').value = cfg.tradingModel || '';
+  $('cfg-trading-model').value = cfg.tradingModel || 'claude-opus-4-7';
   $('cfg-exchange-provider').value = cfg.exchangeProvider || '';
   $('cfg-exchange-key').value = cfg.exchangeKey || '';
   $('cfg-exchange-secret').value = cfg.exchangeSecret || '';
   $('cfg-exchange-passphrase').value = cfg.exchangePassphrase || '';
+  if ($('cfg-x-enabled')) $('cfg-x-enabled').checked = !!cfg.xEnabled;
+  // Feature visibility toggles — separate from "enabled" config flags so the
+  // user can turn the UI on/off independently. Default ALL on for first run.
+  const featureDefaults = {
+    featureTrading:  cfg.featureTrading  !== false,
+    featureScreen:   cfg.featureScreen   !== false,
+    featureInterview:cfg.featureInterview!== false,
+    featureTranslate:cfg.featureTranslate!== false
+  };
+  if ($('cfg-feature-trading'))   $('cfg-feature-trading').checked   = featureDefaults.featureTrading;
+  if ($('cfg-feature-screen'))    $('cfg-feature-screen').checked    = featureDefaults.featureScreen;
+  if ($('cfg-feature-interview')) $('cfg-feature-interview').checked = featureDefaults.featureInterview;
+  if ($('cfg-feature-translate')) $('cfg-feature-translate').checked = featureDefaults.featureTranslate;
   updateExchangeKeysVisibility(cfg.exchangeProvider || '');
-  applyTranslatePanelVisibility(!!cfg.translateEnabled);
-  applyInterviewPanelVisibility(!!cfg.interviewEnabled);
-  applyTradingPanelVisibility(!!cfg.tradingEnabled);
+  refreshXAuthStatus().catch(() => {});
+  applyFeatureVisibility(featureDefaults);
+  applyTranslatePanelVisibility(!!cfg.translateEnabled && featureDefaults.featureTranslate);
+  applyInterviewPanelVisibility(!!cfg.interviewEnabled && featureDefaults.featureInterview);
+  applyTradingPanelVisibility(!!cfg.tradingEnabled && featureDefaults.featureTrading);
   updateTranslateLangLabel();
   await phantom.window.setContentProtection(cfg.stealth !== false);
   if (!cfg.apiKey) {
@@ -184,13 +244,24 @@ $('cfg-save').addEventListener('click', async () => {
     exchangeProvider: $('cfg-exchange-provider').value,
     exchangeKey: $('cfg-exchange-key').value.trim(),
     exchangeSecret: $('cfg-exchange-secret').value.trim(),
-    exchangePassphrase: $('cfg-exchange-passphrase').value.trim()
+    exchangePassphrase: $('cfg-exchange-passphrase').value.trim(),
+    xEnabled: $('cfg-x-enabled') ? $('cfg-x-enabled').checked : false,
+    featureTrading:  $('cfg-feature-trading')   ? $('cfg-feature-trading').checked   : true,
+    featureScreen:   $('cfg-feature-screen')    ? $('cfg-feature-screen').checked    : true,
+    featureInterview:$('cfg-feature-interview') ? $('cfg-feature-interview').checked : true,
+    featureTranslate:$('cfg-feature-translate') ? $('cfg-feature-translate').checked : true
   };
   await phantom.config.set(cfg);
   await phantom.window.setContentProtection(cfg.stealth);
-  applyTranslatePanelVisibility(cfg.translateEnabled);
-  applyInterviewPanelVisibility(cfg.interviewEnabled);
-  applyTradingPanelVisibility(cfg.tradingEnabled);
+  applyFeatureVisibility({
+    featureTrading:  cfg.featureTrading,
+    featureScreen:   cfg.featureScreen,
+    featureInterview:cfg.featureInterview,
+    featureTranslate:cfg.featureTranslate
+  });
+  applyTranslatePanelVisibility(cfg.translateEnabled && cfg.featureTranslate);
+  applyInterviewPanelVisibility(cfg.interviewEnabled && cfg.featureInterview);
+  applyTradingPanelVisibility(cfg.tradingEnabled && cfg.featureTrading);
   updateTranslateLangLabel();
   setStatus('Configuración guardada.', 'ok');
 });
@@ -389,6 +460,44 @@ async function runAction(action) {
   }
 }
 
+/**
+ * Inline news summarizer — was a separate script (lib/news-summary.js) but
+ * CSP `script-src 'self'` was silently blocking it under file:// origin in
+ * some Electron builds. Inlining guarantees the news block reaches the prompt.
+ */
+function inlineSummarizeNewsForPrompt(newsData) {
+  if (!newsData) return '';
+  const hasRecent   = !!(newsData.recent   && newsData.recent.length);
+  const hasUpcoming = !!(newsData.upcoming && newsData.upcoming.length);
+  if (!hasRecent && !hasUpcoming) return '';
+  const lines = [];
+  lines.push('NEWS CONTEXT (real headlines fetched from public feeds — these ARE specific news items, you MUST cite them):');
+  if (hasRecent) {
+    lines.push('\nRecent headlines:');
+    for (const item of newsData.recent.slice(0, 10)) {
+      const age = item.hoursAgo !== null && item.hoursAgo !== undefined
+        ? `${item.hoursAgo}h ago` : 'recent';
+      const votes = item.votes
+        ? ` [+${item.votes.positive}/-${item.votes.negative}]` : '';
+      lines.push(`  - [${item.source} · ${age}]${votes} ${item.title}`);
+    }
+  }
+  if (hasUpcoming) {
+    lines.push('\nUpcoming scheduled events:');
+    for (const item of newsData.upcoming) {
+      const when = item.published_at ? new Date(item.published_at).toISOString().slice(0, 10) : '';
+      lines.push(`  - [${when}] ${item.title}`);
+    }
+  }
+  lines.push('\nNews interpretation rules:');
+  lines.push('- Bullish news + bearish chart = potential bull trap, demand confirmation.');
+  lines.push('- Bearish news + bullish chart = capitulation signal, check volume for reversal.');
+  lines.push('- Upcoming event within 7 days = elevated volatility risk; size down or wait.');
+  lines.push('- Weight the chart MORE than headlines, but flag news as a risk factor in your reasoning.');
+  lines.push('- You MUST cite at least 2 specific headlines above by quoting a fragment in SECTION 2.6.');
+  return lines.join('\n');
+}
+
 async function sendChat() {
   if (state.busy) return;
   const q = chatInput.value.trim();
@@ -403,25 +512,54 @@ async function sendChat() {
   state.messages.push({ role: 'user', content: q });
 
   try {
-    const screenshot = await captureScreen();
-
-    // Re-inyectar imagen en el último user para que el modelo vea el estado actual
-    const messagesForAPI = state.messages.slice(0, -1);
-    messagesForAPI.push({
-      role: 'user',
-      content: await buildContent(q, screenshot)
-    });
-
     let exchangeCtx = '';
     if (state.mode === 'trading') {
       const exData = await fetchExchangeData();
       exchangeCtx = formatExchangeDataForPrompt(exData);
     }
-    const system = state.mode === 'trading' ? getTradingSystemPrompt(exchangeCtx) : getSystemPrompt(state.mode || 'responder');
+
+    const messagesForAPI = state.messages.slice(0, -1);
+    let chartDataForPrompt = null;
+
+    if (state.mode === 'trading') {
+      const asset = tradingAssetInput.value.trim();
+      const chartData = asset
+        ? await phantom.trading.captureCharts({ asset, timeframes: ['15', '60', '240'], indicators: Array.from(tradingActiveIndicators) })
+        : null;
+      chartDataForPrompt = chartData;
+      const chart1H = chartData?.['60'];
+      const chart4H = chartData?.['240'];
+
+      if (chart1H || chart4H) {
+        const cfg = await phantom.config.get();
+        const content = [];
+        const addImg = (dataUrl) => {
+          if (!dataUrl) return;
+          if (cfg.provider === 'openai') {
+            content.push({ type: 'image_url', image_url: { url: dataUrl } });
+          } else {
+            const m = /^data:(image\/\w+);base64,(.+)$/.exec(dataUrl);
+            if (m) content.push({ type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } });
+          }
+        };
+        if (chart1H) addImg(chart1H);
+        if (chart4H) addImg(chart4H);
+        content.push({ type: 'text', text: q + (exchangeCtx ? '\n\n' + exchangeCtx : '') });
+        messagesForAPI.push({ role: 'user', content });
+      } else {
+        const screenshot = await captureScreen();
+        messagesForAPI.push({ role: 'user', content: await buildContent(q, screenshot) });
+      }
+    } else {
+      const screenshot = await captureScreen();
+      messagesForAPI.push({ role: 'user', content: await buildContent(q, screenshot) });
+    }
+
+    const system = state.mode === 'trading' ? getTradingSystemPrompt(exchangeCtx, chartDataForPrompt?._renderedIndicators) : getSystemPrompt(state.mode || 'responder');
     let aiPayload = { messages: messagesForAPI, system };
     if (state.mode === 'trading') {
       const tradingCfg = await phantom.config.get();
-      if (tradingCfg.tradingModel) aiPayload.model = tradingCfg.tradingModel;
+      aiPayload.model = tradingCfg.tradingModel || 'claude-opus-4-7';
       aiPayload.maxTokens = 4096;
     }
     const resp = await phantom.ai.call(aiPayload);
@@ -790,6 +928,32 @@ function renderTradingMarkdown(text) {
   // 1. Extract special trading blocks BEFORE markdown processing
   const tradingBlocks = [];
 
+  // Extract DECISION card (ENTER NOW or DO NOT ENTER)
+  text = text.replace(/🟢\s*\*{0,2}ENTER NOW\s*[—–-]\s*LONG\*{0,2}/gi, (m) => {
+    const idx = tradingBlocks.length;
+    tradingBlocks.push(`<div class="trade-decision decision-long">
+      <div class="decision-icon">🟢</div>
+      <div class="decision-text"><strong>ENTER NOW — LONG</strong></div>
+    </div>`);
+    return `__TRADE_BLOCK_${idx}__`;
+  });
+  text = text.replace(/🔴\s*\*{0,2}ENTER NOW\s*[—–-]\s*SHORT\*{0,2}/gi, (m) => {
+    const idx = tradingBlocks.length;
+    tradingBlocks.push(`<div class="trade-decision decision-short">
+      <div class="decision-icon">🔴</div>
+      <div class="decision-text"><strong>ENTER NOW — SHORT</strong></div>
+    </div>`);
+    return `__TRADE_BLOCK_${idx}__`;
+  });
+  text = text.replace(/🟡\s*\*{0,2}DO NOT ENTER\s*[—–-]\s*WAIT\*{0,2}/gi, (m) => {
+    const idx = tradingBlocks.length;
+    tradingBlocks.push(`<div class="trade-decision decision-wait">
+      <div class="decision-icon">🟡</div>
+      <div class="decision-text"><strong>DO NOT ENTER — WAIT</strong></div>
+    </div>`);
+    return `__TRADE_BLOCK_${idx}__`;
+  });
+
   // Extract BIAS_BAR
   text = text.replace(/\[BIAS_BAR\]\s*([\s\S]*?)\s*\[\/BIAS_BAR\]/gi, (m, content) => {
     const longMatch = content.match(/LONG:\s*(\d+)%/i);
@@ -833,8 +997,46 @@ function renderTradingMarkdown(text) {
     return `__TRADE_BLOCK_${idx}__`;
   });
 
-  // 2. Render normal markdown
+  // 2. Remove ugly === separator lines
+  text = text.replace(/^={3,}\s*$/gm, '');
+
+  // 2.1 Convert --- horizontal rules (but not inside tables)
+  text = text.replace(/^-{3,}\s*$/gm, '___HR___');
+
+  // 2.2 Parse markdown tables into HTML before renderMarkdown
+  const tableBlocks = [];
+  text = text.replace(/((?:^\|.+\|[ \t]*$\n?){2,})/gm, (tableText) => {
+    const rows = tableText.trim().split('\n').filter(r => r.trim());
+    if (rows.length < 2) return tableText;
+    // Check if 2nd row is separator (|---|---|)
+    const isSep = /^\|[\s\-:]+(\|[\s\-:]+)+\|?\s*$/.test(rows[1]);
+    let html = '<table class="trading-table"><thead><tr>';
+    const headerCells = rows[0].split('|').filter(c => c.trim() !== '');
+    headerCells.forEach(c => { html += `<th>${c.trim()}</th>`; });
+    html += '</tr></thead><tbody>';
+    const startRow = isSep ? 2 : 1;
+    for (let i = startRow; i < rows.length; i++) {
+      const cells = rows[i].split('|').filter(c => c.trim() !== '');
+      html += '<tr>';
+      cells.forEach(c => { html += `<td>${c.trim()}</td>`; });
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    const idx = tableBlocks.length;
+    tableBlocks.push(html);
+    return `__TABLE_BLOCK_${idx}__`;
+  });
+
+  // 2.3 Render normal markdown
   let html = renderMarkdown(text);
+
+  // 2.4 Re-insert tables
+  html = html.replace(/__TABLE_BLOCK_(\d+)__/g, (m, idx) => {
+    return '</p>' + tableBlocks[Number(idx)] + '<p>';
+  });
+
+  // 2.5 Convert HR placeholders
+  html = html.replace(/___HR___/g, '</p><hr class="trading-hr"/><p>');
 
   // 3. Colorize trading keywords BEFORE re-inserting blocks
   //    (doing it after would break HTML attributes inside trade cards/bias bars)
@@ -1756,7 +1958,21 @@ loadTradingIndicators();
 renderTradingChips();
 renderTradingPicker();
 
-function getTradingSystemPrompt(exchangeContext) {
+function buildStrategySummary() {
+  if (typeof TRADING_STRATEGIES === 'undefined') return '';
+  return TRADING_STRATEGIES.map(s => {
+    const rules = s.rules;
+    return `### ${s.name} [${s.category}]
+- TF: ${s.timeframes.join(', ')} | Market: ${s.market} | WR: ${s.winRate} | R:R ${s.rr}
+- Indicators: ${s.indicators.join(', ')}
+- LONG: ${rules.longEntry}
+- SHORT: ${rules.shortEntry}
+- SL: ${rules.stopLoss} | TP: ${rules.takeProfit}
+- Filters: ${rules.filters}`;
+  }).join('\n\n');
+}
+
+function getTradingSystemPrompt(exchangeContext, renderedIndicators) {
   const uiLang = (typeof getLanguage === 'function') ? getLanguage() : 'es';
   const langName = LANG_NAMES[uiLang] || 'Spanish';
 
@@ -1766,22 +1982,145 @@ function getTradingSystemPrompt(exchangeContext) {
     .map(i => `- ${i.name}: ${i.desc}`)
     .join('\n');
 
+  const visibleSet = Array.isArray(renderedIndicators) && renderedIndicators.length
+    ? renderedIndicators
+    : [...tradingActiveIndicators];
+  const visibleInds = visibleSet
+    .map(id => TRADING_INDICATORS.find(i => i.id === id))
+    .filter(Boolean)
+    .map(i => `- ${i.name}`)
+    .join('\n');
+  const visibleSection = `\n\nINDICATORS VISIBLE ON CHART (these are the ONLY ones you can read numerical values from — the rest of the toolkit is for contextual knowledge only):\n${visibleInds || '- (none — only price action)'}\n\nFor any indicator NOT in the list above, you may discuss what it WOULD show conceptually, but you MUST NOT cite a specific value for it. If you mention them, say "I cannot read X directly from the chart, but based on price action it likely shows..."`;
+
   const asset = tradingAssetInput.value.trim();
   const assetLine = asset ? `The user is analyzing: ${asset}` : 'The user has not specified an asset — infer it from the chart if possible.';
+  const strategySummary = buildStrategySummary();
 
   const exchangeSection = exchangeContext ? `
 
-LIVE EXCHANGE DATA:
-The user has connected their exchange account. You have access to their REAL positions, open orders, and account balance.
-Use this data to:
+LIVE MARKET DATA:
+You have access to REAL-TIME market data. This is NOT hypothetical — use it as a KEY factor in your decision.
+
+EXCHANGE DATA (if connected):
 - Evaluate their current position (entry price, unrealized PnL, liquidation risk)
 - Suggest whether to hold, add to position, take profit, or cut losses
 - Consider their open orders (take profits, stop losses) in your analysis
 - Factor their available margin/balance into risk management
 - Be specific: "Your long from $80,074 is currently +$X, consider taking partial profit at..."
+
+FUNDING RATE ANALYSIS:
+- Positive funding = longs pay shorts → market is overleveraged long → bearish pressure
+- Negative funding = shorts pay longs → market is overleveraged short → bullish pressure
+- Extreme funding (>0.05% per 8h or <-0.05%) = high probability of mean reversion/squeeze
+- Use funding as a CONTRARIAN indicator for medium-term bias
+
+OPEN INTEREST (OI) ANALYSIS:
+- Rising OI + Rising Price = New money entering longs → bullish confirmation
+- Rising OI + Falling Price = New money entering shorts → bearish confirmation
+- Falling OI + Rising Price = Short covering rally → weak/unsustainable move
+- Falling OI + Falling Price = Long liquidation → capitulation phase
+
+LONG/SHORT RATIO & TOP TRADER POSITIONING:
+- When >65% are long, shorts have higher squeeze potential but longs may get trapped
+- When >65% are short, longs have higher squeeze potential but shorts may get trapped
+- Smart money (top traders) diverging from retail = follow smart money
+- Extreme imbalance = incoming squeeze against the majority
+
+FEAR & GREED INDEX:
+- 0-20: Extreme Fear → historically best buying opportunities
+- 20-40: Fear → good accumulation zone
+- 40-60: Neutral → wait for direction
+- 60-80: Greed → reduce exposure, tighten stops
+- 80-100: Extreme Greed → high reversal risk, don't open new longs
+
+MARKET CONTEXT:
+- If top gainers/losers show broad market moves, the asset is correlated → less alpha in the setup
+- If the asset moves independently while market is flat → stronger signal
+- Trending coins show market narrative/rotation → use for context
+
+NEWS & EVENTS CONTEXT:
+You may receive a NEWS CONTEXT block in the user prompt with real headlines and upcoming events.
+- Always read it BEFORE giving your decision. Cite specific headlines that influence your bias.
+- Weight news LESS than the chart but flag it as a risk factor in SECTION 7 (Risk Factors).
+- Upcoming events within 7 days = volatility risk: recommend smaller size or WAIT.
+- News-driven moves often retrace once the headline fades — fade strong rallies on bullish news with no chart support.
+- If NO news data is available, treat news sentiment as neutral and don't fabricate headlines.
 ` : '';
 
-  return `You are a senior professional trader and institutional-grade technical analyst with 15+ years of experience across crypto, equities, forex, and commodities markets. You have managed 8-figure portfolios and specialized in multi-timeframe analysis, order flow, and risk-adjusted position sizing.
+  return `🌐 OUTPUT LANGUAGE — ABSOLUTE PRIORITY: Your entire response MUST be written in ${langName} (${uiLang}). Every section header, every label, every sentence, every word. The user's app interface is set to ${langName}; mixing languages or replying in English when ${langName} is requested is a critical failure. The data blocks in this prompt use English keywords (technical terms like "Funding Rate", "Open Interest", "Taker Ratio") — translate or transliterate them into ${langName} when writing your reply. Section titles like "SECCIÓN 1 — DECISIÓN" should be in ${langName} too.
+
+You are a senior professional trader and institutional-grade technical analyst with 15+ years of experience across crypto, equities, forex, and commodities markets. You have managed 8-figure portfolios and specialized in multi-timeframe analysis, order flow, and risk-adjusted position sizing.
+
+CRITICAL — REAL MONEY IS AT STAKE. NEVER INVENT DATA.
+
+The user trades REAL money. A wrong analysis costs real dollars. These rules are NON-NEGOTIABLE:
+
+1. **ONLY REPORT WHAT YOU LITERALLY SEE ON THE CHART.** Every single value, level, candle, and pattern you mention must be VISUALLY READABLE in the screenshot. The chart images you receive are 1H and 4H of the asset. Look at them. Read them. Report them.
+
+2. **FORBIDDEN: INVENTING PRECISE NUMBERS.**
+   - DO NOT write "RSI 24.68" or "MACD -64.56" unless you can see those exact digits on screen.
+   - DO NOT cite "$80,200" as a level if no candle reached that price on the visible chart.
+   - DO NOT make up indicator values for indicators that are NOT shown in the panes below price.
+   - Instead, describe what you actually see: "RSI is in the oversold zone, around 30", "MACD lines are below zero and diverging", "price is testing the upper Bollinger band". Approximate ranges from visual reading are HONEST. Fake precise decimals are LIES.
+
+3. **ONLY ANALYZE INDICATORS ACTUALLY ON THE CHART.** The chart was rendered with a SPECIFIC subset of indicators (listed below as "INDICATORS VISIBLE ON CHART"). Those are the ones you can read. The "INDICATORS IN YOUR TOOLKIT" list is your KNOWLEDGE — you can MENTION how they would interpret what you see, but you CANNOT cite numerical values for indicators not visually present.
+
+4. **FORBIDDEN: INVENTING PATTERNS.**
+   - DO NOT call it a "double top" unless you can see TWO distinct highs at approximately the same price.
+   - DO NOT call "bearish divergence" unless you can trace price making a higher high while the indicator makes a lower high (or vice versa).
+   - DO NOT claim "rejection with long upper wick" if the candles don't show long upper wicks.
+   - If the chart shows consolidation/sideways action, say so. Most of the time charts ARE inconclusive. Honesty about "no clear setup" is more valuable than a fabricated one.
+
+5. **MANDATORY READING PROTOCOL — DO THIS BEFORE WRITING:**
+   - Step A: Look at the 4H chart. Identify the trend direction over the visible candles (uptrend / downtrend / range). Note the highest and lowest prices visible.
+   - Step B: Look at the 1H chart. Same identification. Note the most recent 5-10 candles' behavior (impulsive up? impulsive down? consolidation? rejection?).
+   - Step C: Read each indicator pane visible. For each, note position (overbought/oversold/neutral) and direction (rising/falling/flat).
+   - Step D: Only NOW form the analysis. The decision must flow from steps A-C, not vice versa.
+
+6. **CONFLUENCE = HONEST COUNTING.** When stating "X/4 timeframes aligned":
+   - List each TF and its bias explicitly in the table.
+   - Count the aligned ones. Don't write "3/4" if the table shows 2 bullish + 1 bearish + 1 neutral — that's 2/4.
+   - 0-2/4 → MANDATORY "DO NOT ENTER — WAIT". No exceptions.
+   - 3-4/4 → can recommend direction.
+
+7. **CONSISTENCY CHECK BEFORE SENDING.** Re-read your response. Verify:
+   - Decision in Section 1 matches Confluence Score
+   - Bias % in Section 8 matches decision (e.g. can't be 50/50 with a LONG recommendation)
+   - Active trade setup in Section 9 matches decision (WAIT decision → WAIT setup, not a forced long/short)
+   - Cited indicator values are values you actually read, not invented
+   If anything contradicts, REWRITE. Don't send contradictions to a trader.
+
+8. **WHEN UNCERTAIN → WAIT.** Default bias under uncertainty is "NO TRADE." Missing a trade = $0 lost. Recommending a bad trade = real $ lost. Asymmetric. Always lean toward WAIT when the chart is ambiguous.
+
+9. **WHEN THE USER PUSHES BACK — NEVER CAPITULATE WITHOUT VERIFICATION.**
+   This is the most dangerous moment. A wrong "you're right, my mistake" costs the user real money. Follow this PROTOCOL strictly:
+
+   STEP 1: Re-read the actual data you received in this conversation. Quote the EXACT value from the prompt blocks (EXCHANGE DATA, COINGLASS, NEWS, etc.). Do not trust your memory of what you said — quote the SOURCE.
+
+   STEP 2: Compare to what the user is asserting.
+
+   STEP 3: One of three outcomes:
+     (a) The user is right AND the data you received was wrong → say "I had X% from {source}, but if you see Y% on your screen the {source} feed is stale. Re-pulling on next analysis. For now I'll trust your live reading." NEVER claim YOU made the mistake when it was a data feed issue.
+     (b) The user is right AND you misread the data → quote the data you received, point out the specific misread, correct it. e.g. "You're right — the funding rate in my data is -0.0183%. I incorrectly reported 2.43%. Corrected analysis follows."
+     (c) The user is wrong (your data says X, their assertion conflicts) → defend with the data. e.g. "The COINGLASS block in your prompt shows funding +0.16%. If your exchange shows something different, we may be looking at different timeframes/contracts. Which contract are you reading?"
+
+   NEVER say "tienes razón" / "you're right" without first quoting the specific data and explaining WHICH outcome (a/b/c) applies.
+
+   FORBIDDEN phrases unless you back them with a specific quoted value:
+     - "Tienes razón"
+     - "Mi error"
+     - "Lo leí mal"
+     - "Análisis corregido"
+     - "Tu análisis fue correcto"
+   These phrases REQUIRE a quote from the prompt data showing what you originally received vs what you should have reported.
+
+10. **DATA SOURCE HIERARCHY (when sources conflict, follow this order):**
+    1. EXCHANGE DATA block (KuCoin / Binance) — REAL-TIME from official exchange APIs. Treat as authoritative for: live price, funding rate, your open positions, your balance.
+    2. COINGLASS AGGREGATED DATA block — useful for: aggregated OI across exchanges, total liquidations, global L/S ratio. NOT used for funding rate (Coinglass renders it in a canvas, unreliable).
+    3. Chart screenshots — for: price action, patterns, indicator readings visible on screen.
+    4. User's live screen claim — if user contradicts your prompt data, prefer YOUR DATA but acknowledge the user's screen and offer to re-fetch.
+
+    Funding rate specifically: ONLY trust the EXCHANGE DATA block's "💸 FUNDING RATE" value. If a user says funding is -0.0183% but your data says +2%, your data wins (or is stale — never adopt the user's number as if it were yours).
 
 YOUR TRADING PHILOSOPHY:
 - Capital preservation ALWAYS comes first. Never recommend entries without clear invalidation levels.
@@ -1789,66 +2128,88 @@ YOUR TRADING PHILOSOPHY:
 - You size positions based on account risk (1-2% max per trade) and volatility (ATR-based).
 - You understand market microstructure: liquidity pools, stop hunts, institutional order blocks.
 - You read price action in context — a hammer at support after a flush means something different than one mid-range.
+- YOU MUST BE DECISIVE. The user needs a clear YES/NO answer on whether to enter NOW. No ambiguity.
 
 ${assetLine}
 
-INDICATORS IN YOUR TOOLKIT (apply deep knowledge even if not all visible on chart):
+INDICATORS IN YOUR TOOLKIT (your knowledge base — you understand all of these):
 ${activeInds}
+${visibleSection}
 ${exchangeSection}
 
-DELIVER YOUR ANALYSIS IN THIS EXACT STRUCTURE AND ORDER:
-${exchangeContext ? `
-===========================================================
-**SECTION 0 — 💼 YOUR OPEN POSITION** (MUST BE FIRST — THIS IS THE MOST IMPORTANT SECTION)
-===========================================================
-This section MUST appear FIRST, before ANY technical analysis. The user connected their exchange — they want to know about THEIR money immediately.
+CRITICAL — MULTI-TIMEFRAME ANALYSIS:
+Even though the screenshot may show only ONE timeframe, you MUST analyze and give your reading for ALL of these timeframes based on visible indicators, price structure, and your knowledge:
+- **5m** (scalping/micro structure) — immediate momentum, micro S/R, entry timing
+- **15m** (intraday) — short-term trend, pullback zones, session structure
+- **1H** (swing intraday) — intraday bias, key levels, trend confirmation
+- **4H** (swing) — main trend direction, major S/R, institutional flow
 
-Analyze their current open position(s) in detail:
-- **Position Summary**: Side (LONG/SHORT), size, entry price, current price, unrealized PnL, margin used, liquidation price
-- **Position Health**: Is it in danger? How far from liquidation? Is the margin adequate?
-- **Verdict on Position**: HOLD / ADD / REDUCE / CLOSE — be decisive, explain why
-- **Immediate Actions**: Specific advice like "Move SL to $X", "Take 50% profit NOW at $X", "Your liquidation at $X is dangerously close"
-- **Open Orders Review**: Are their TP/SL orders well placed? Suggest adjustments with exact prices
+Use the visible chart to extrapolate structure for timeframes not shown. If the chart shows 1H candles, infer 4H structure from the broader view, and 15m/5m from recent candle clusters.
 
-If they have NO open positions, say "No open positions detected" and suggest whether NOW is a good time to enter.
+The user wants confluence across timeframes. A setup is STRONG when 3+ timeframes agree. A setup is WEAK when timeframes conflict.
+
+STRATEGY LIBRARY — PROVEN SETUPS:
+You have access to a library of ${typeof TRADING_STRATEGIES !== 'undefined' ? TRADING_STRATEGIES.length : 0} proven trading strategies. When analyzing a chart:
+1. Identify which strategies match the CURRENT market conditions (trending, ranging, volatile, breakout)
+2. Check if the chart shows entry conditions for any strategy
+3. In SECTION 9, recommend the best matching strategy by name and explain why it fits
+4. If the user asks "what strategies apply here?" — evaluate ALL strategies against the current chart and rank them
+5. Always cite the strategy name, expected win rate, and R:R when recommending
+
+${strategySummary}
+
+CRITICAL — OUTPUT FORMAT RULES:
+Your response must be SHORT, ACTIONABLE, and SCANNABLE. A real trader reads this in 30 seconds and knows exactly what to do.
+
+DO NOT:
+- Explain what RSI/MACD/Bollinger/etc are. The trader already knows.
+- Cite specific news headlines (you use them for context internally, but DO NOT name them in the response).
+- Describe each indicator's reading one-by-one (no "RSI shows X, MACD shows Y, ADX shows Z" sections).
+- Write multi-paragraph academic justifications.
+- Output any section labeled "indicator confluence", "news sentiment", or "indicator readings".
+- Use === or --- as decorative dividers.
+
+DO:
+- Use the data internally (charts, funding, OI, CVD, whale prints, walls, news, on-chain) to FORM your call.
+- Output ONLY: direction + 2 actionable scenarios + key levels + structured trade tags.
+- Cite specific prices ($X) and percentages — they earn their place in the output.
+- Be decisive. If unclear → DIRECTION: RANGE/WAIT.
+
+DELIVER YOUR RESPONSE IN THIS EXACT STRUCTURE — NOTHING MORE, NOTHING LESS:
+
+${exchangeContext ? `## 💼 TU POSICIÓN ABIERTA
+(2-3 líneas. Side, size, entry, current PnL, distancia a liquidación. Veredicto: HOLD / TAKE PROFIT / REDUCE / CLOSE. Si no hay posición abierta, omití esta sección entera.)
+
+---
 ` : ''}
+## 🚦 DIRECCIÓN
+**UP** / **DOWN** / **RANGE** — una sola palabra en negrita.
+Then 2-3 short sentences explaining the call (max ~40 words). Mention only what matters: dominant timeframe bias, key flow signal, and what would invalidate. NO explanations of indicators.
+
 ---
 
-**SECTION 1 — ⏱ Market Context**
-Timeframe, trend phase (accumulation/markup/distribution/markdown per Wyckoff), current structure (HH/HL or LH/LL), and where we are relative to the daily/weekly bias.
+## 🔍 MICRO-ANÁLISIS POR TIMEFRAME
+For EACH of the three timeframes below, give a one-line read + a one-line "qué esperar" (what to look for / what triggers the next move). Be concrete with prices. Total max ~90 words.
 
-**SECTION 2 — 🔑 Critical Levels**
-Key S/R with reasoning. Identify institutional levels, liquidity zones, order blocks and FVGs.
+**15m** — estructura micro / scalping
+- Lectura: [estructura actual en 15m: rango, breakout, retroceso, vela clave…]
+- Qué esperar: [evento concreto que esperás: "ruptura $X con cierre 15m", "rechazo en $Y con mecha larga", "consolidación entre $A-$B antes de definir"…]
 
-**SECTION 3 — 📊 Indicator Confluence**
-For each active indicator, give a TRADER'S reading with context, not just numbers. Identify confirmations, contradictions, and divergences.
+**1H** — bias intradía
+- Lectura: [tendencia 1H, EMA/BB context, último swing high/low]
+- Qué esperar: [cierre 1H sobre/bajo $X, retest de nivel clave, divergencia, etc.]
 
-**SECTION 4 — 📈 Volume & Order Flow**
-Volume profile interpretation, buying vs selling pressure, what it tells about institutional participation.
+**4H** — tendencia mayor
+- Lectura: [trend 4H, S/R mayor, posición vs medias largas]
+- Qué esperar: [break de estructura, cambio de carácter, defensa de nivel institucional]
 
-**SECTION 5 — 🔍 Pattern & Structure**
-Chart patterns with measured move targets. Candlestick patterns at key levels.
+---
 
-**SECTION 6 — ⚠️ Risk Factors**
-What could go wrong: upcoming events, funding rates, OI shifts, correlation risks.
+## 🎯 ESCENARIO 1 (primario)
+**Trigger**: una línea concreta — "Si BTC rompe $X con cierre 1H sobre el nivel..." or "Si rechaza $X con vela bajista en 5m..."
+**Acción**: ENTER LONG / ENTER SHORT / WAIT
 
-===========================================================
-**SECTION 7 — 📊 PROBABILITY & BIAS** (MANDATORY — use this EXACT format)
-===========================================================
-You MUST end with a probability assessment using this EXACT format (the app will parse and render this as a visual bar):
-
-[BIAS_BAR]
-LONG: XX% | SHORT: YY%
-[/BIAS_BAR]
-
-Where XX + YY = 100. Be honest with your assessment.
-
-===========================================================
-**SECTION 8 — 🎯 TRADE SETUPS** (MANDATORY — use these EXACT formats)
-===========================================================
-Provide BOTH long and short setups with exact prices. Use these EXACT tags so the app renders them as visual cards:
-
-[TRADE_LONG]
+[TRADE_LONG]   (or [TRADE_SHORT] — only the one that fits this scenario)
 ENTRY: $XXXXX - $XXXXX
 SL: $XXXXX
 TP1: $XXXXX (R:R X:X)
@@ -1857,69 +2218,119 @@ TP3: $XXXXX (R:R X:X)
 SIZE: X% of capital
 [/TRADE_LONG]
 
-[TRADE_SHORT]
+---
+
+## 🎯 ESCENARIO 2 (alternativo, opuesto al primario)
+**Trigger**: una línea concreta describiendo el caso opuesto.
+**Acción**: ENTER LONG / ENTER SHORT / WAIT
+
+[TRADE_LONG]   (the opposite side from Scenario 1)
 ENTRY: $XXXXX - $XXXXX
 SL: $XXXXX
 TP1: $XXXXX (R:R X:X)
 TP2: $XXXXX (R:R X:X)
 TP3: $XXXXX (R:R X:X)
 SIZE: X% of capital
-[/TRADE_SHORT]
+[/TRADE_LONG]
 
-===========================================================
-**SECTION 9 — 📐 CHART PATTERNS** (use when you identify a pattern)
-===========================================================
-When you identify a chart pattern, insert the corresponding tag INLINE in your analysis. The app will render a beautiful SVG illustration.
+---
 
-Available pattern tags (use the EXACT tag):
-[PATTERN:bull_flag] [PATTERN:bear_flag]
-[PATTERN:ascending_triangle] [PATTERN:descending_triangle] [PATTERN:symmetrical_triangle]
-[PATTERN:double_top] [PATTERN:double_bottom]
-[PATTERN:head_shoulders] [PATTERN:inv_head_shoulders]
-[PATTERN:rising_wedge] [PATTERN:falling_wedge]
-[PATTERN:cup_handle]
-[PATTERN:channel_up] [PATTERN:channel_down]
-[PATTERN:engulfing_bull] [PATTERN:engulfing_bear]
-[PATTERN:hammer] [PATTERN:doji]
+## ⚡ SCALP ($200-300, 0.25-0.4% moves)
+Sección dedicada al scalp rápido. USA el bloque "SCALP RADAR" si te llegó (book imbalance, CVD velocity, aggressor split, liquidaciones recientes, imán más cercano) — son los números EN VIVO de los últimos segundos.
 
-You can add a caption: [PATTERN:bull_flag "Forming on 4H since May 10"]
-Use 1-3 patterns per analysis — only the ones you actually see on the chart. Don't force patterns that aren't there.
+**LONG scalp** (si la presión y los imanes lo permiten)
+- Zona entry: $X-$Y
+- TP: $Z (+$D, R:R micro)
+- SL: $W (-$D)
+- Disparador en tape: qué tiene que pasar AHORA para apretar (ej "CVD vuelve a +$80k/min con tape >15 t/s", "se barre el ask wall $X", "shorts liquidados en últimos 30s")
+
+**SHORT scalp** (si la presión y los imanes lo permiten)
+- Zona entry: $X-$Y
+- TP: $Z
+- SL: $W
+- Disparador en tape: análogo opuesto
+
+**Trampa probable**: stop hunt esperado en $X (cita el imán o cluster pequeño si existe) — esperá la barrida ANTES de entrar.
+
+Si no hay edge claro de scalp → escribí "WAIT — no setup de scalp ahora" + 1 línea explicando qué falta (ej "necesito CVD positivo + ruptura $X").
+
+---
+
+## 🔑 NIVELES CLAVE
+Lista corta — máximo 5 líneas:
+- **$XXX**: rol breve (ej "soporte volume profile", "ask wall", "EMA200 4H")
+- **$XXX**: rol breve
+- **$XXX**: rol breve
+- **$XXX**: invalidación general
+
+---
+
+## 📊 SESGO
+[BIAS_BAR]
+LONG: XX% | SHORT: YY%
+[/BIAS_BAR]
+
+One line explaining the bias split.
+
+---
+
+PATRONES OPCIONALES: si ves un patrón claro (NO forzar), insertá el tag inline en DIRECCIÓN o ESCENARIO:
+[PATTERN:bull_flag] [PATTERN:bear_flag] [PATTERN:ascending_triangle] [PATTERN:descending_triangle]
+[PATTERN:double_top] [PATTERN:double_bottom] [PATTERN:head_shoulders] [PATTERN:inv_head_shoulders]
+[PATTERN:rising_wedge] [PATTERN:falling_wedge] [PATTERN:cup_handle]
+[PATTERN:channel_up] [PATTERN:channel_down] [PATTERN:engulfing_bull] [PATTERN:engulfing_bear]
+Max 1 pattern por análisis.
+
+TAG REFERENCE (use the pair that matches each scenario's side):
+- LONG scenario uses an opening [TRADE_LONG] and a closing [/TRADE_LONG] around the ENTRY/SL/TPs/SIZE block.
+- SHORT scenario uses an opening [TRADE_SHORT] and a closing [/TRADE_SHORT] around the ENTRY/SL/TPs/SIZE block.
+Each scenario block must open and close with the matching pair.
 
 STYLE RULES:
-- Be decisive. Give your actual bias, don't hedge with "it could go either way."
-- Use exact prices and percentages — always with $ sign for prices.
-- If the setup isn't there, say "NO TRADE" — the best trade is sometimes no trade.
-- Think like a prop trader: what's the edge, what's the risk, what's the plan?
-- Reference multi-timeframe context when relevant.
-- When mentioning LONG positions, profits, bullish signals, TPs hit → these are POSITIVE (green).
-- When mentioning SHORT positions, losses, bearish signals, SL hit → these are NEGATIVE (red).
-- Always use $ before prices so the UI can colorize them.
+- Use $ before every price so the UI colorizes them.
+- LONG references → bullish/green tone. SHORT references → bearish/red tone.
+- Total length target: 450-650 words (includes MICRO-ANÁLISIS POR TIMEFRAME and SCALP sections). Anything longer means you're explaining instead of advising.
+- If the setup is genuinely unclear → set DIRECCIÓN = RANGE, both scenarios = WAIT, narrow scenarios to "if breaks $X up → re-evaluate long; if breaks $Y down → re-evaluate short". Do NOT force trades.
 
 ⚠️ DISCLAIMER: Educational analysis only. Not financial advice.
 
-🌐 LANGUAGE — Reply ALWAYS in ${langName} (${uiLang}).`;
+🌐 LANGUAGE REMINDER (last check before you reply): Your entire output above must be in ${langName} (${uiLang}). If you wrote anything in English by reflex (section names, verdict labels, etc.), translate it now to ${langName}. NO EXCEPTIONS.`;
 }
 
-// Fetch exchange data (positions, orders, balance, ticker) if configured
+// Fetch exchange data (positions, orders, balance, ticker, funding, OI) if configured
 async function fetchExchangeData() {
   const cfg = await phantom.config.get();
   console.log('[Trading] Exchange config:', cfg.exchangeProvider, '| key:', cfg.exchangeKey ? 'SET' : 'EMPTY', '| secret:', cfg.exchangeSecret ? 'SET' : 'EMPTY');
-  if (!cfg.exchangeProvider || !cfg.exchangeKey || !cfg.exchangeSecret) {
-    console.log('[Trading] No exchange configured, skipping data fetch');
-    return null;
+
+  const asset = tradingAssetInput.value.trim();
+  let exchangeData = null;
+
+  if (cfg.exchangeProvider && cfg.exchangeKey && cfg.exchangeSecret) {
+    try {
+      await phantom.config.set({ ...cfg, tradingAsset: asset });
+      console.log('[Trading] Fetching exchange data for:', asset || '(no asset)');
+      exchangeData = await phantom.exchange.fetch({ type: 'all' });
+      console.log('[Trading] Exchange data received:', JSON.stringify(exchangeData).slice(0, 500));
+    } catch (err) {
+      console.error('[Trading] Exchange fetch error:', err);
+      exchangeData = { error: err.message };
+    }
+  } else {
+    console.log('[Trading] No exchange configured, skipping private data fetch');
   }
+
+  // Always fetch public market data (no API key needed)
+  let publicData = null;
   try {
-    // Guardar el asset actual en config para que main.js lo use
-    const asset = tradingAssetInput.value.trim();
-    await phantom.config.set({ ...cfg, tradingAsset: asset });
-    console.log('[Trading] Fetching exchange data for:', asset || '(no asset)');
-    const data = await phantom.exchange.fetch({ type: 'all' });
-    console.log('[Trading] Exchange data received:', JSON.stringify(data).slice(0, 500));
-    return data;
+    console.log('[Trading] Fetching public market data...');
+    publicData = await phantom.market.publicData({ asset });
+    console.log('[Trading] Public data received:', JSON.stringify(publicData).slice(0, 500));
   } catch (err) {
-    console.error('[Trading] Exchange fetch error:', err);
-    return { error: err.message };
+    console.error('[Trading] Public data fetch error:', err);
   }
+
+  // Merge both datasets
+  return { ...(exchangeData || {}), publicData };
 }
 
 function formatExchangeDataForPrompt(data) {
@@ -1967,7 +2378,87 @@ function formatExchangeDataForPrompt(data) {
     }
   }
 
-  return parts.length > 0 ? '\n\n--- LIVE EXCHANGE DATA ---\n' + parts.join('\n') : '';
+  // Funding rate
+  if (data.fundingRate && !data.fundingRate.error) {
+    parts.push(`\n💸 FUNDING RATE:`);
+    const fr = data.fundingRate;
+    if (fr.value !== undefined) {
+      // KuCoin format
+      const pct = (parseFloat(fr.value) * 100).toFixed(4);
+      parts.push(`  Current: ${pct}% | Predicted: ${fr.predictedValue ? (parseFloat(fr.predictedValue) * 100).toFixed(4) + '%' : 'N/A'}`);
+    } else if (fr.fundingRate !== undefined) {
+      // Binance format
+      const pct = (parseFloat(fr.fundingRate) * 100).toFixed(4);
+      parts.push(`  Current: ${pct}% | Time: ${new Date(fr.fundingTime).toUTCString()}`);
+    }
+    parts.push(`  → Positive = longs pay shorts (bearish pressure). Negative = shorts pay longs (bullish pressure).`);
+    parts.push(`  → Extreme values (>0.1% or <-0.1%) often signal incoming reversals.`);
+  }
+
+  // Open interest
+  if (data.openInterest && !data.openInterest.error) {
+    parts.push(`\n📈 OPEN INTEREST:`);
+    const oi = data.openInterest;
+    if (oi.openInterest !== undefined) {
+      // Binance format
+      parts.push(`  OI: ${parseFloat(oi.openInterest).toLocaleString()} contracts | Symbol: ${oi.symbol || ''}`);
+    } else if (oi.openInterest !== undefined || oi.turnoverOf24h !== undefined) {
+      // KuCoin format
+      parts.push(`  OI: ${oi.openInterest || 'N/A'} | 24h Turnover: ${oi.turnoverOf24h || 'N/A'} | 24h Volume: ${oi.volumeOf24h || 'N/A'}`);
+    }
+    parts.push(`  → Rising OI + rising price = strong trend. Rising OI + falling price = bearish pressure.`);
+    parts.push(`  → Falling OI = positions closing, trend may be weakening.`);
+  }
+
+  // Long/Short ratio (Binance only)
+  if (data.longShortRatio && !data.longShortRatio.error) {
+    parts.push(`\n⚖️ LONG/SHORT RATIO (Global):`);
+    const lsr = data.longShortRatio;
+    parts.push(`  Long: ${(parseFloat(lsr.longAccount || 0) * 100).toFixed(1)}% | Short: ${(parseFloat(lsr.shortAccount || 0) * 100).toFixed(1)}% | Ratio: ${lsr.longShortRatio || 'N/A'}`);
+    parts.push(`  → Extreme imbalance (>70% one side) often precedes a squeeze against the majority.`);
+  }
+
+  // Public market data
+  const pub = data.publicData;
+  if (pub) {
+    // Fear & Greed Index
+    if (pub.fearGreed && !pub.fearGreed.error) {
+      parts.push(`\n🌡️ FEAR & GREED INDEX:`);
+      parts.push(`  Value: ${pub.fearGreed.value}/100 — ${pub.fearGreed.label}`);
+      parts.push(`  → 0-25: Extreme Fear (buy opportunity). 75-100: Extreme Greed (sell signal).`);
+    }
+
+    // 24h ticker stats
+    if (pub.ticker24h) {
+      parts.push(`\n📊 24H MARKET STATS:`);
+      parts.push(`  Change: ${pub.ticker24h.priceChangePercent} | High: $${pub.ticker24h.high} | Low: $${pub.ticker24h.low}`);
+      parts.push(`  Volume: ${parseFloat(pub.ticker24h.volume).toLocaleString()} | Quote Vol: $${parseFloat(pub.ticker24h.quoteVolume).toLocaleString()}`);
+    }
+
+    // Top trader positions
+    if (pub.topTraderPositions && !pub.topTraderPositions.error) {
+      parts.push(`\n🐋 TOP TRADERS POSITIONING:`);
+      const tp = pub.topTraderPositions;
+      parts.push(`  Long: ${(parseFloat(tp.longAccount || 0) * 100).toFixed(1)}% | Short: ${(parseFloat(tp.shortAccount || 0) * 100).toFixed(1)}% | Ratio: ${tp.longShortRatio || 'N/A'}`);
+      parts.push(`  → Smart money positioning. Divergence from retail is significant.`);
+    }
+
+    // Market movers
+    if (pub.topGainers && pub.topLosers) {
+      parts.push(`\n🔥 MARKET MOVERS (24h):`);
+      parts.push(`  Top Gainers: ${pub.topGainers.map(g => `${g.symbol} ${g.change}`).join(', ')}`);
+      parts.push(`  Top Losers: ${pub.topLosers.map(l => `${l.symbol} ${l.change}`).join(', ')}`);
+      parts.push(`  → Context: is the whole market moving, or just this asset?`);
+    }
+
+    // Trending coins
+    if (pub.trending && !pub.trending.error) {
+      parts.push(`\n🔎 TRENDING (CoinGecko):`);
+      parts.push(`  ${pub.trending.map(t => `${t.symbol} (#${t.rank || '?'})`).join(', ')}`);
+    }
+  }
+
+  return parts.length > 0 ? '\n\n--- LIVE MARKET DATA ---\n' + parts.join('\n') : '';
 }
 
 btnTradingAnalyze.addEventListener('click', async () => {
@@ -1984,40 +2475,158 @@ btnTradingAnalyze.addEventListener('click', async () => {
   setStatus(t('trading.analyzing'), 'busy');
 
   try {
-    // Fetch screenshot + exchange data in parallel
-    const [screenshot, exchangeData] = await Promise.all([
-      captureScreen(),
-      fetchExchangeData()
-    ]);
-    if (!screenshot) throw new Error('No se pudo capturar la pantalla');
+    const asset = tradingAssetInput.value.trim();
 
-    const exchangeContext = formatExchangeDataForPrompt(exchangeData);
-    const system = getTradingSystemPrompt(exchangeContext);
-    const uiLang = (typeof getLanguage === 'function') ? getLanguage() : 'es';
-    const userTexts = {
-      es: 'Analizá este gráfico de trading con los indicadores seleccionados. Dame tu análisis técnico completo.',
-      en: 'Analyze this trading chart with the selected indicators. Give me your complete technical analysis.',
-      pt: 'Analise este gráfico de trading com os indicadores selecionados. Dê-me sua análise técnica completa.',
-      fr: 'Analysez ce graphique de trading avec les indicateurs sélectionnés. Donnez-moi votre analyse technique complète.',
-      ja: '選択したインジケーターでこのトレーディングチャートを分析してください。完全なテクニカル分析をお願いします。',
-      zh: '使用选定的指标分析此交易图表。给我完整的技术分析。'
-    };
-    let userPrompt = userTexts[uiLang] || userTexts.es;
-    if (exchangeContext) {
-      userPrompt += '\n\n' + exchangeContext;
+    setStatus('🔄 Capturando charts + noticias + on-chain + trade tape...', 'busy');
+    const [chartData, exchangeData, newsRes, cgRes, ofRes, hlRes, dlRes, ttRes, srRes] = await Promise.all([
+      asset ? phantom.trading.captureCharts({ asset, timeframes: ['15', '60', '240'], indicators: Array.from(tradingActiveIndicators) }) : Promise.resolve(null),
+      fetchExchangeData(),
+      asset ? phantom.news.fetch({ asset, includeX: await isXEnabled() }).catch(() => ({ ok: false })) : Promise.resolve({ ok: false }),
+      asset ? phantom.coinglass.fetch({ symbol: asset }).catch(() => ({ ok: false })) : Promise.resolve({ ok: false }),
+      asset ? phantom.orderflow.fetch({ asset }).catch(() => ({ ok: false })) : Promise.resolve({ ok: false }),
+      asset ? phantom.hyperliquid.fetch({ asset }).catch(() => ({ ok: false })) : Promise.resolve({ ok: false }),
+      phantom.defillama.fetch().catch(() => ({ ok: false })),
+      asset ? phantom.tradetape.fetch({ asset }).catch(() => ({ ok: false })) : Promise.resolve({ ok: false }),
+      asset ? phantom.scalpradar.fetch({ asset }).catch(() => ({ ok: false })) : Promise.resolve({ ok: false })
+    ]);
+    const newsData = newsRes?.ok ? newsRes.data : null;
+    const coinglassData = cgRes?.ok ? cgRes.data : null;
+    const coinglassBlock = cgRes?.ok ? cgRes.promptBlock : '';
+    const orderflowBlock = ofRes?.ok ? ofRes.promptBlock : '';
+    const hyperliquidBlock = hlRes?.ok ? hlRes.promptBlock : '';
+    const defillamaBlock = dlRes?.ok ? dlRes.promptBlock : '';
+    const tradeTapeBlock = ttRes?.ok ? ttRes.promptBlock : '';
+    // Scalp radar block — compact tactical snapshot for the SCALP section.
+    let scalpRadarBlock = '';
+    if (srRes && srRes.ok && srRes.data) {
+      try {
+        const sr = srRes.data;
+        const lines = ['SCALP RADAR (live, computed from orderbook + tape + liquidation feed):'];
+        if (sr.mid != null) lines.push(`- Mid: $${Math.round(sr.mid)}, spread ${sr.spread_pct != null ? sr.spread_pct.toFixed(3) : '—'}% (${sr.spread_velocity})`);
+        lines.push(`- Pressure: ${sr.pressure >= 0 ? '+' : ''}${sr.pressure}/100 → ${sr.verdict}`);
+        lines.push(`- Reason: ${sr.reason}`);
+        if (sr.book_imbalance != null) lines.push(`- Book imbalance (top 1%): ${sr.book_imbalance.toFixed(2)}× (bid/ask)`);
+        lines.push(`- CVD velocity: ${sr.cvd_velocity_usd_per_min >= 0 ? '+' : ''}$${sr.cvd_velocity_usd_per_min.toLocaleString()}/min`);
+        lines.push(`- Aggressor 60s: BUY ${sr.aggressor_pct.buy_pct}% / SELL ${sr.aggressor_pct.sell_pct}%`);
+        lines.push(`- Tape speed: ${sr.tape_speed_per_sec} trades/sec`);
+        lines.push(`- Whale flow 5m: BUY $${sr.whale_flow_usd.buy.toLocaleString()} / SELL $${sr.whale_flow_usd.sell.toLocaleString()}`);
+        if (sr.liquidations && sr.liquidations.total_liq_usd > 0) {
+          lines.push(`- Liquidations 5m: longs $${Math.round(sr.liquidations.longs_liq_usd).toLocaleString()} / shorts $${Math.round(sr.liquidations.shorts_liq_usd).toLocaleString()} → ${sr.liquidations.dominant_side || '—'}`);
+        }
+        if (sr.nearest_magnet) {
+          const m = sr.nearest_magnet;
+          const dir = m.distance_usd > 0 ? 'above' : 'below';
+          lines.push(`- Nearest liq magnet: $${Math.round(m.price)} (${m.side}, $${Math.round(m.notional_usd).toLocaleString()}, ${Math.abs(m.distance_usd).toFixed(0)} ${dir})`);
+        }
+        if (sr.trap_warning) lines.push(`- ⚠ Trap: ${sr.trap_warning}`);
+        scalpRadarBlock = lines.join('\n');
+      } catch (_) { scalpRadarBlock = ''; }
     }
 
-    const messages = [{
-      role: 'user',
-      content: await buildContent(userPrompt, screenshot)
-    }];
+    const chart1H = chartData?.['60'];
+    const chart4H = chartData?.['240'];
+    const hasCharts = chart1H || chart4H;
+
+    let screenshot = null;
+    if (!hasCharts) {
+      setStatus('📸 Sin charts embebidos, capturando pantalla...', 'busy');
+      screenshot = await captureScreen();
+    }
+
+    if (!hasCharts && !screenshot) throw new Error('No se pudo capturar ningún gráfico');
+
+    setStatus(t('trading.analyzing'), 'busy');
+
+    const exchangeContext = formatExchangeDataForPrompt(exchangeData);
+    const system = getTradingSystemPrompt(exchangeContext, chartData?._renderedIndicators);
+    const uiLang = (typeof getLanguage === 'function') ? getLanguage() : 'es';
+
+    let userPrompt;
+    if (hasCharts) {
+      userPrompt = chartAnalysisPrompt(uiLang);
+    } else {
+      const userTexts = {
+        es: 'Analizá este gráfico de trading con los indicadores seleccionados. Dame tu análisis técnico completo.',
+        en: 'Analyze this trading chart with the selected indicators. Give me your complete technical analysis.',
+        pt: 'Analise este gráfico de trading com os indicadores selecionados. Dê-me sua análise técnica completa.',
+        fr: 'Analysez ce graphique de trading avec les indicateurs sélectionnés. Donnez-moi votre analyse technique complète.',
+        ja: '選択したインジケーターでこのトレーディングチャートを分析してください。完全なテクニカル分析をお願いします。',
+        zh: '使用选定的指标分析此交易图表。给我完整的技术分析。'
+      };
+      userPrompt = userTexts[uiLang] || userTexts.es;
+    }
+    if (exchangeContext) userPrompt += '\n\n' + exchangeContext;
+    if (coinglassBlock) userPrompt += '\n\n' + coinglassBlock;
+    if (orderflowBlock) userPrompt += '\n\n' + orderflowBlock;
+    if (tradeTapeBlock) userPrompt += '\n\n' + tradeTapeBlock;
+    if (hyperliquidBlock) userPrompt += '\n\n' + hyperliquidBlock;
+    if (scalpRadarBlock) userPrompt += '\n\n' + scalpRadarBlock;
+    if (defillamaBlock) userPrompt += '\n\n' + defillamaBlock;
+    let newsBlockLen = 0;
+    let newsBlockText = '';
+    // Inline summarizer so we don't depend on news-summary.js loading via
+    // script tag (CSP / path edge-cases were silently dropping it).
+    newsBlockText = inlineSummarizeNewsForPrompt(newsData);
+    newsBlockLen = newsBlockText.length;
+    if (newsBlockText) userPrompt += '\n\n' + newsBlockText;
+    const debugState = {
+      kind: 'manual',
+      promptLen: userPrompt.length,
+      hasExchange: !!exchangeContext,
+      coinglassLen: coinglassBlock ? coinglassBlock.length : 0,
+      newsBlockLen,
+      newsRecent: newsData ? (newsData.recent || []).length : -1,
+      newsData_isNull: newsData == null,
+      newsRes_ok: !!(newsRes && newsRes.ok),
+      newsSummaryLoaded: !!window.NewsSummary,
+      includesNewsContext: userPrompt.includes('NEWS CONTEXT')
+    };
+    console.log('[PROMPT-DEBUG manual]', debugState);
+    phantom.ai.debugPrompt({ kind: 'manual', prompt: '__STATE__ ' + JSON.stringify(debugState) + '\n\n' + userPrompt }).catch(() => {});
+
+    // Render news panel below the analysis result.
+    renderNewsPanelUI(newsData);
+
+    let messages;
+    if (hasCharts) {
+      const cfg = await phantom.config.get();
+      const content = [];
+      const addImg = (dataUrl) => {
+        if (!dataUrl) return;
+        if (cfg.provider === 'openai') {
+          content.push({ type: 'image_url', image_url: { url: dataUrl } });
+        } else {
+          const m = /^data:(image\/\w+);base64,(.+)$/.exec(dataUrl);
+          if (m) content.push({ type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } });
+        }
+      };
+      if (chart1H) addImg(chart1H);
+      if (chart4H) addImg(chart4H);
+      content.push({ type: 'text', text: userPrompt });
+      messages = [{ role: 'user', content }];
+    } else {
+      messages = [{ role: 'user', content: await buildContent(userPrompt, screenshot) }];
+    }
 
     // Use dedicated trading model if configured
     const tradingCfg = await phantom.config.get();
-    const tradingModel = tradingCfg.tradingModel || null;
+    const tradingModel = tradingCfg.tradingModel || 'claude-opus-4-7';
     const resp = await phantom.ai.call({ messages, system, model: tradingModel, maxTokens: 4096 });
     tradingResultText.innerHTML = renderTradingMarkdown(resp.text);
     setStatus(t('trading.analysis_ready'), 'ok');
+
+    if (window.PhantomTradeLog) {
+      window.PhantomTradeLog.afterAnalysis(resp.text, {
+        asset: tradingAssetInput.value.trim(),
+        timeframes: hasCharts ? ['60', '240'] : ['screen'],
+        indicators: chartData?._renderedIndicators || Array.from(tradingActiveIndicators),
+        source: 'manual',
+        news_context: newsData ? {
+          recent: (newsData.recent || []).slice(0, 5).map(n => ({ title: n.title, source: n.source, url: n.url })),
+          upcoming: (newsData.upcoming || []).slice(0, 3).map(n => ({ title: n.title, published_at: n.published_at }))
+        } : null
+      }).catch(() => {});
+    }
 
     const bodyEl = document.querySelector('.body');
     if (bodyEl) tradingResult.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2036,10 +2645,33 @@ btnTradingAnalyze.addEventListener('click', async () => {
   }
 });
 
+/**
+ * Hide / show high-level features so the user only sees what they use.
+ * Settings → "Funcionalidades activas" drives this.
+ *
+ * featureScreen   → .actions row (Leer pantalla / Contestar) + chat
+ * featureTrading  → trading panel + everything inside (live data, insights)
+ * featureInterview→ interview panel
+ * featureTranslate→ translate panel
+ */
+function applyFeatureVisibility(feat) {
+  const actions   = document.querySelector('.actions');
+  const chatWrap  = document.getElementById('chat-wrap');
+  if (actions)  actions.style.display  = feat.featureScreen ? '' : 'none';
+  if (chatWrap) chatWrap.dataset.featDisabled = feat.featureScreen ? '' : '1';
+  // Trading toggle: also forces the trading panel off when feature disabled.
+  if (!feat.featureTrading)  applyTradingPanelVisibility(false);
+  if (!feat.featureInterview)applyInterviewPanelVisibility(false);
+  if (!feat.featureTranslate)applyTranslatePanelVisibility(false);
+}
+
 function applyTradingPanelVisibility(on) {
   tradingPanel.style.display = on ? 'flex' : 'none';
   if (on) {
-    phantom.window.resize({ width: 680, height: 900 });
+    // Tall enough to show Indicators + Asset + Insights + Market Pulse
+    // (walls + tape) without forcing the user to scroll. Width 720 fits the
+    // 2-column Market Pulse layout.
+    phantom.window.resize({ width: 720, height: 1100 });
   } else {
     // Limpiar conversación y resultado de trading al desactivar
     if (state.mode === 'trading') {
@@ -2089,3 +2721,2261 @@ function setDanger(on) {
     banner.remove();
   }
 }
+
+// ─── AUTO-ANALYSIS TRADING ALERTS ──────────────────────────────────
+(function initAutoAnalysis() {
+  const autoToggle = $('trading-auto-toggle');
+  const autoSettings = $('auto-settings');
+  const autoInterval = $('auto-interval');
+  const autoEmail = $('auto-email');
+  const autoStatus = $('auto-status');
+  let autoTimer = null;
+
+  if (!autoToggle) return;
+
+  // Load saved settings
+  phantom.config.get().then(cfg => {
+    if (cfg.autoTradingEmail) autoEmail.value = cfg.autoTradingEmail;
+    if (cfg.autoTradingInterval) autoInterval.value = cfg.autoTradingInterval;
+  });
+
+  let autoStarted = false;
+
+  autoToggle.addEventListener('change', () => {
+    if (autoToggle.checked) {
+      autoSettings.style.display = 'block';
+      autoStatus.textContent = '⏳ Configurá intervalo y email, luego hacé click en "Iniciar"';
+      autoStatus.className = 'auto-status';
+      autoStarted = false;
+    } else {
+      stopAutoAnalysis();
+      autoSettings.style.display = 'none';
+      autoStarted = false;
+    }
+  });
+
+  // Add start button dynamically
+  const startBtn = document.createElement('button');
+  startBtn.textContent = '▶ Iniciar alertas';
+  startBtn.className = 'btn btn-mini';
+  startBtn.style.cssText = 'margin-top:8px;width:100%;background:linear-gradient(135deg,#1a3a5c,#3b82f6);color:#fff;padding:8px;border-radius:8px;font-weight:700;font-size:12px;cursor:pointer;border:none;';
+  autoSettings.appendChild(startBtn);
+
+  startBtn.addEventListener('click', () => {
+    if (autoStarted) {
+      stopAutoAnalysis();
+      autoStarted = false;
+      startBtn.textContent = '▶ Iniciar alertas';
+      startBtn.style.background = 'linear-gradient(135deg,#1a3a5c,#3b82f6)';
+    } else {
+      startAutoAnalysis();
+    }
+  });
+
+  autoInterval.addEventListener('change', () => {
+    if (autoToggle.checked) {
+      stopAutoAnalysis();
+      startAutoAnalysis();
+    }
+  });
+
+  // Save email on blur
+  autoEmail.addEventListener('blur', async () => {
+    const cfg = await phantom.config.get();
+    await phantom.config.set({ ...cfg, autoTradingEmail: autoEmail.value, autoTradingInterval: autoInterval.value });
+  });
+
+  function startAutoAnalysis() {
+    const email = autoEmail.value.trim();
+    if (!email) {
+      autoStatus.textContent = '⚠ Ingresá un email primero';
+      autoStatus.className = 'auto-status error';
+      return;
+    }
+
+    const asset = tradingAssetInput.value.trim();
+    if (!asset) {
+      autoStatus.textContent = '⚠ Ingresá un activo arriba primero (ej: BTC/USDT)';
+      autoStatus.className = 'auto-status error';
+      return;
+    }
+
+    if (tradingActiveIndicators.size === 0) {
+      autoStatus.textContent = '⚠ Seleccioná indicadores primero';
+      autoStatus.className = 'auto-status error';
+      return;
+    }
+
+    const minutes = parseInt(autoInterval.value) || 30;
+    const ms = minutes * 60 * 1000;
+
+    autoStatus.textContent = `⏳ Cargando charts embebidos para ${asset}...`;
+    autoStatus.className = 'auto-status active';
+
+    // Save settings
+    phantom.config.get().then(cfg => {
+      phantom.config.set({ ...cfg, autoTradingEmail: email, autoTradingInterval: autoInterval.value });
+    });
+
+    autoStarted = true;
+    startBtn.textContent = '⏹ Detener alertas';
+    startBtn.style.background = 'linear-gradient(135deg,#dc2626,#ef4444)';
+
+    // Pre-create hidden chart windows with the asset
+    phantom.trading.updateChartSymbol({ asset }).then(() => {
+      autoStatus.textContent = `✅ Charts cargando... primer análisis en 15s`;
+      autoStatus.className = 'auto-status active';
+
+      // Wait 15s for charts to fully load before first analysis
+      setTimeout(() => {
+        if (!autoStarted) return;
+        runAutoAnalysis();
+        autoTimer = setInterval(() => {
+          if (!autoStarted) { clearInterval(autoTimer); return; }
+          runAutoAnalysis();
+        }, ms);
+      }, 15000);
+    });
+  }
+
+  function stopAutoAnalysis() {
+    if (autoTimer) {
+      clearInterval(autoTimer);
+      autoTimer = null;
+    }
+    autoStatus.textContent = '';
+    autoStatus.className = 'auto-status';
+  }
+
+  async function runAutoAnalysis() {
+    const email = autoEmail.value.trim();
+    const asset = tradingAssetInput.value.trim();
+    if (!email || !asset) {
+      autoStatus.textContent = '⚠ Falta email o activo';
+      autoStatus.className = 'auto-status error';
+      return;
+    }
+
+    if (tradingActiveIndicators.size === 0) {
+      autoStatus.textContent = '⚠ Seleccioná indicadores primero';
+      autoStatus.className = 'auto-status error';
+      return;
+    }
+
+    const minutes = parseInt(autoInterval.value) || 30;
+    autoStatus.textContent = '🔄 Analizando...';
+    autoStatus.className = 'auto-status active';
+
+    try {
+      // Capture embedded charts (1H + 4H) + fetch data + news + coinglass in parallel
+      autoStatus.textContent = '🔄 Capturando charts + noticias + on-chain + trade tape...';
+      const [chartData, exchangeData, newsRes, cgRes, ofRes, hlRes, dlRes, ttRes] = await Promise.all([
+        phantom.trading.captureCharts({ asset, timeframes: ['15', '60', '240'], indicators: Array.from(tradingActiveIndicators) }),
+        fetchExchangeData(),
+        phantom.news.fetch({ asset, includeX: await isXEnabled() }).catch(() => ({ ok: false })),
+        phantom.coinglass.fetch({ symbol: asset }).catch(() => ({ ok: false })),
+        phantom.orderflow.fetch({ asset }).catch(() => ({ ok: false })),
+        phantom.hyperliquid.fetch({ asset }).catch(() => ({ ok: false })),
+        phantom.defillama.fetch().catch(() => ({ ok: false })),
+        phantom.tradetape.fetch({ asset }).catch(() => ({ ok: false }))
+      ]);
+      const newsData = newsRes?.ok ? newsRes.data : null;
+      const coinglassData = cgRes?.ok ? cgRes.data : null;
+      const coinglassBlock = cgRes?.ok ? cgRes.promptBlock : '';
+      const orderflowBlock = ofRes?.ok ? ofRes.promptBlock : '';
+      const hyperliquidBlock = hlRes?.ok ? hlRes.promptBlock : '';
+      const defillamaBlock = dlRes?.ok ? dlRes.promptBlock : '';
+      const tradeTapeBlock = ttRes?.ok ? ttRes.promptBlock : '';
+
+      const chart1H = chartData?.['60'];
+      const chart4H = chartData?.['240'];
+
+      if (!chart1H && !chart4H) {
+        autoStatus.textContent = '⚠ No se pudieron capturar los charts embebidos';
+        autoStatus.className = 'auto-status error';
+        return;
+      }
+
+      autoStatus.textContent = '🔄 Analizando con AI...';
+
+      // Pull the previous alert(s) for this asset so the AI can write a
+      // natural follow-up ("the SHORT we called 30 min ago is still valid...").
+      let priorBlock = '';
+      try {
+        const prevRes = await phantom.trades.recent({ asset, sinceMs: 6 * 60 * 60 * 1000, limit: 3 });
+        const prevTrades = (prevRes?.trades || []).slice(0, 2);
+        if (prevTrades.length) {
+          const lines = ['PREVIOUS ALERTS FOR THIS ASSET (most recent first):'];
+          for (const p of prevTrades) {
+            const min = Math.max(0, Math.round((Date.now() - Date.parse(p.created_at)) / 60000));
+            const ageLabel = min < 60 ? `${min} min ago` : `${Math.floor(min / 60)}h ${min % 60}min ago`;
+            const setup = p.ai_decision === 'SHORT' ? p.ai_setup_short : p.ai_setup_long;
+            const setupStr = setup
+              ? `entry ${setup.entry || '?'} | SL ${setup.sl || '?'} | TP1 ${setup.tp1 || '?'}`
+              : '(no setup)';
+            const userActStr = p.user_action
+              ? ` | user marked: ${p.user_action.toUpperCase()}${p.outcome && p.outcome !== 'open' ? ' / ' + p.outcome.toUpperCase() : ''}`
+              : ' | user did not mark action';
+            lines.push(`- ${ageLabel}: ${p.ai_decision || 'WAIT'} (${p.ai_confluence || '?/4'}) — ${setupStr}${userActStr}`);
+          }
+          lines.push('');
+          lines.push('CONTINUITY INSTRUCTIONS:');
+          lines.push('- Acknowledge the prior call(s) in your "Section 1 — Decision" if relevant. Example: "Following up on the SHORT from 30 min ago..."');
+          lines.push('- If the new decision is the SAME direction → tell the user the previous setup is still valid (or has progressed).');
+          lines.push('- If the new decision is REVERSED → explicitly warn them: "If you entered the previous SHORT, consider closing it before this LONG."');
+          lines.push('- If the new decision is WAIT after a directional call → tell them whether to hold their position or stand aside.');
+          lines.push('- Reference the previous entry price and current price to tell the user whether their (possible) entry is in profit/loss.');
+          priorBlock = lines.join('\n');
+        }
+      } catch (e) { console.warn('[priorBlock] failed', e); }
+
+      const exchangeContext = formatExchangeDataForPrompt(exchangeData);
+      const system = getTradingSystemPrompt(exchangeContext, chartData?._renderedIndicators);
+      const uiLang = (typeof getLanguage === 'function') ? getLanguage() : 'es';
+      let promptText = chartAnalysisPrompt(uiLang)
+        + (exchangeContext ? '\n\n' + exchangeContext : '');
+      if (priorBlock) promptText += '\n\n' + priorBlock;
+      if (coinglassBlock) promptText += '\n\n' + coinglassBlock;
+      if (orderflowBlock) promptText += '\n\n' + orderflowBlock;
+      if (tradeTapeBlock) promptText += '\n\n' + tradeTapeBlock;
+      if (hyperliquidBlock) promptText += '\n\n' + hyperliquidBlock;
+      if (defillamaBlock) promptText += '\n\n' + defillamaBlock;
+      let _autoNewsLen = 0;
+      const _newsBlock = inlineSummarizeNewsForPrompt(newsData);
+      _autoNewsLen = _newsBlock.length;
+      if (_newsBlock) promptText += '\n\n' + _newsBlock;
+      const _autoDebug = {
+        kind: 'auto',
+        promptLen: promptText.length,
+        coinglassLen: coinglassBlock ? coinglassBlock.length : 0,
+        newsBlockLen: _autoNewsLen,
+        newsRecent: newsData ? (newsData.recent || []).length : -1,
+        newsData_isNull: newsData == null,
+        newsRes_ok: !!(newsRes && newsRes.ok),
+        newsSummaryLoaded: !!window.NewsSummary,
+        includesNewsContext: promptText.includes('NEWS CONTEXT')
+      };
+      console.log('[PROMPT-DEBUG auto]', _autoDebug);
+      phantom.ai.debugPrompt({ kind: 'auto', prompt: '__STATE__ ' + JSON.stringify(_autoDebug) + '\n\n' + promptText }).catch(() => {});
+      renderNewsPanelUI(newsData);
+
+      // Build content with multiple images
+      const cfg = await phantom.config.get();
+      const content = [];
+      const addImage = (dataUrl) => {
+        if (!dataUrl) return;
+        if (cfg.provider === 'openai') {
+          content.push({ type: 'image_url', image_url: { url: dataUrl } });
+        } else {
+          const m = /^data:(image\/\w+);base64,(.+)$/.exec(dataUrl);
+          if (m) content.push({ type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } });
+        }
+      };
+      if (chart1H) addImage(chart1H);
+      if (chart4H) addImage(chart4H);
+      content.push({ type: 'text', text: promptText });
+
+      const messages = [{ role: 'user', content }];
+      const tradingCfg = await phantom.config.get();
+      const resp = await phantom.ai.call({ messages, system, model: tradingCfg.tradingModel || 'claude-opus-4-7', maxTokens: 4096 });
+
+      // Also render in the panel
+      const tradingResult = $('trading-result');
+      const tradingResultText = $('trading-result-text');
+      tradingResult.style.display = 'block';
+      tradingResultText.innerHTML = renderTradingMarkdown(resp.text);
+
+      if (window.PhantomTradeLog) {
+        window.PhantomTradeLog.afterAnalysis(resp.text, {
+          asset,
+          timeframes: ['15', '60', '240'],
+          indicators: chartData?._renderedIndicators || [],
+          source: 'auto',
+          news_context: newsData ? {
+            recent: (newsData.recent || []).slice(0, 5).map(n => ({ title: n.title, source: n.source, url: n.url })),
+            upcoming: (newsData.upcoming || []).slice(0, 3).map(n => ({ title: n.title, published_at: n.published_at }))
+          } : null
+        }).catch(() => {});
+      }
+
+      // ─── Extract structured data via the shared parser ───
+      const text = resp.text;
+      const indicatorNames = (chartData?._renderedIndicators || [])
+        .map(id => (TRADING_INDICATORS.find(i => i.id === id) || {}).name)
+        .filter(Boolean);
+      const parsed = window.AIResponseParser.parseAll(text, { indicatorNames });
+
+      const decision = parsed.decision || 'WAIT';
+      const tradeSetup = decision === 'SHORT' ? parsed.setupShort : parsed.setupLong;
+
+      // Market data block (kept verbatim — already worked before).
+      const mktData = {};
+      if (exchangeData) {
+        if (exchangeData.ticker) mktData.price = exchangeData.ticker.price || exchangeData.ticker.bestAsk;
+        if (exchangeData.fundingRate && !exchangeData.fundingRate.error) {
+          const fr = exchangeData.fundingRate;
+          mktData.fundingRate = fr.value ? (parseFloat(fr.value) * 100).toFixed(4) + '%'
+            : fr.fundingRate ? (parseFloat(fr.fundingRate) * 100).toFixed(4) + '%' : null;
+        }
+        if (exchangeData.openInterest && !exchangeData.openInterest.error) {
+          const oi = exchangeData.openInterest;
+          mktData.openInterest = oi.openInterest ? parseFloat(oi.openInterest).toLocaleString() : null;
+        }
+        if (exchangeData.longShortRatio && !exchangeData.longShortRatio.error) {
+          mktData.longShortRatio = exchangeData.longShortRatio.longShortRatio || null;
+        }
+        const pub = exchangeData.publicData;
+        if (pub) {
+          if (pub.fearGreed && !pub.fearGreed.error) mktData.fearGreed = pub.fearGreed.value + ' (' + pub.fearGreed.label + ')';
+          if (pub.ticker24h) {
+            mktData.change24h = pub.ticker24h.priceChangePercent;
+            mktData.high = pub.ticker24h.high;
+            mktData.low = pub.ticker24h.low;
+          }
+        }
+      }
+      const currentPrice = parseFloat(mktData.price) || null;
+
+      // ─── Continuity: pull the previous alerts for this asset and build follow-up ─
+      let continuity = null;
+      try {
+        const prevRes = await phantom.trades.recent({ asset, sinceMs: 6 * 60 * 60 * 1000, limit: 3 });
+        // Skip the trade we *just* logged (afterAnalysis runs above).
+        const prevTrades = (prevRes?.trades || []).filter(t => Math.abs(Date.now() - Date.parse(t.created_at)) > 60 * 1000);
+        if (prevTrades.length && window.Continuity) {
+          continuity = window.Continuity.buildContinuity(prevTrades, decision, currentPrice);
+        }
+      } catch (e) { console.warn('[continuity] failed', e); }
+
+      // Send email alert with full structured data + continuity + full text.
+      const alertResult = await phantom.trading.sendAlert({
+        to: email,
+        asset,
+        decision,
+        confluence_score: parsed.score || null,
+        bias: parsed.bias || null,
+        summary: parsed.summary || 'Ver análisis completo en Phantom.',
+        confluence: parsed.confluence.length > 0 ? parsed.confluence : undefined,
+        indicators: parsed.indicators.length > 0 ? parsed.indicators : undefined,
+        levels: parsed.levels || null,
+        risks: parsed.risks || null,
+        strategies: parsed.strategies || null,
+        patterns: parsed.patterns || [],
+        marketData: Object.keys(mktData).length > 0 ? mktData : undefined,
+        tradeSetup: tradeSetup || undefined,
+        continuity: continuity || undefined,
+        fullAnalysis: text,            // The raw AI markdown — worker can render in full.
+        timestamp: new Date().toISOString()
+      });
+
+      if (alertResult.success) {
+        autoStatus.textContent = `✅ Alerta enviada a ${email} — próxima en ${minutes} min`;
+        autoStatus.className = 'auto-status active';
+      } else {
+        autoStatus.textContent = `⚠ Error email: ${alertResult.error || 'unknown'}`;
+        autoStatus.className = 'auto-status error';
+      }
+    } catch (err) {
+      console.error('[Auto-Analysis] Error:', err);
+      autoStatus.textContent = `⚠ Error: ${err.message}`;
+      autoStatus.className = 'auto-status error';
+    }
+  }
+})();
+
+// ════════════════════════════════════════════════════════════════
+// TRADE LOGGING — captures every analysis and tracks outcomes.
+// Auto-hooks into both the manual "Analizar" button and auto-alerts.
+// ════════════════════════════════════════════════════════════════
+// ─── News panel rendering helper ─────────────────────────────────
+function inlineRenderNewsPanelHTML(newsData) {
+  if (!newsData) return '';
+  const esc = (s) => String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const recent = (newsData.recent || []).slice(0, 8);
+  const upcoming = (newsData.upcoming || []).slice(0, 4);
+  if (recent.length === 0 && upcoming.length === 0) {
+    return '<div class="news-panel-empty">Sin noticias disponibles.</div>';
+  }
+  const recentHTML = recent.map(item => {
+    const age = item.hoursAgo !== null && item.hoursAgo !== undefined ? `${item.hoursAgo}h` : '';
+    const votes = item.votes
+      ? `<span class="news-votes">+${item.votes.positive}/-${item.votes.negative}</span>` : '';
+    const url = item.url ? `href="${esc(item.url)}" target="_blank" rel="noopener"` : '';
+    return `<a class="news-item" ${url}>
+        <div class="news-meta"><span class="news-source">${esc(item.source || 'unknown')}</span><span class="news-age">${esc(age)}</span>${votes}</div>
+        <div class="news-title">${esc(item.title)}</div>
+      </a>`;
+  }).join('');
+  const upcomingHTML = upcoming.map(item => {
+    const when = item.published_at ? new Date(item.published_at).toISOString().slice(0, 10) : '';
+    const url = item.url ? `href="${esc(item.url)}" target="_blank" rel="noopener"` : '';
+    return `<a class="news-item news-event" ${url}>
+        <div class="news-meta"><span class="news-event-date">📅 ${esc(when)}</span></div>
+        <div class="news-title">${esc(item.title)}</div>
+      </a>`;
+  }).join('');
+  let html = '';
+  if (recent.length)   html += `<div class="news-section-title">📰 Noticias recientes</div><div class="news-list">${recentHTML}</div>`;
+  if (upcoming.length) html += `<div class="news-section-title" style="margin-top:8px">📅 Eventos próximos</div><div class="news-list">${upcomingHTML}</div>`;
+  return html;
+}
+
+function renderNewsPanelUI(newsData) {
+  const panel = document.getElementById('news-panel');
+  const content = document.getElementById('news-panel-content');
+  const footer = document.getElementById('news-panel-footer');
+  if (!panel || !content) return;
+  if (!newsData) {
+    panel.style.display = 'none';
+    return;
+  }
+  content.innerHTML = inlineRenderNewsPanelHTML(newsData);
+  if (footer) {
+    const srcs = newsData.sources || {};
+    const errs = newsData.errors || null;
+    const totalRecent = (newsData.recent || []).length;
+    const totalUpcoming = (newsData.upcoming || []).length;
+    // Show ✓ if source returned items, ⚠ if it errored, · if just empty.
+    const tag = (label, key) => {
+      const count = srcs[key] || 0;
+      if (count > 0) return `${label} ${count}`;
+      if (errs && errs[key]) return `${label} ⚠`;
+      return `${label} 0`;
+    };
+    const xPart = srcs.x !== undefined
+      ? (srcs.x > 0 ? ` · 𝕏 ${srcs.x}` : (srcs.x_unauthenticated ? ' · 𝕏 ⚪' : (srcs.x_error ? ' · 𝕏 ⚠' : ' · 𝕏 0')))
+      : '';
+    footer.textContent = `${totalRecent} noticias · ${totalUpcoming} eventos · ${tag('Google', 'google_news')} · ${tag('Reddit', 'reddit')} · ${tag('CryptoPanic', 'crypto_panic')} · ${tag('CoinDesk', 'coindesk')} · ${tag('CMC', 'coin_market_cal')}${xPart}`;
+    // Surface failure details on hover so the user can diagnose without opening logs.
+    if (errs) {
+      const errMsg = Object.entries(errs).map(([k, v]) => `${k}: ${v}`).join('\n');
+      footer.title = '⚠ Fallaron fuentes:\n' + errMsg + (srcs.x_error ? '\nx: ' + srcs.x_error : '');
+    } else {
+      footer.title = '';
+    }
+  }
+  panel.style.display = 'block';
+}
+
+(function setupTradeLogging() {
+  const P = window.AIResponseParser;
+  if (!P) {
+    console.warn('[TradeLog] AIResponseParser not available — logging disabled');
+    return;
+  }
+
+  const promptEl    = document.getElementById('trade-log-prompt');
+  const entryRowEl  = document.getElementById('tlp-entry-row');
+  const entryInput  = document.getElementById('tlp-entry');
+  const sizeInput   = document.getElementById('tlp-size');
+  const saveBtn     = document.getElementById('tlp-save');
+  const statusEl    = document.getElementById('tlp-status');
+  const tabsWrap    = document.querySelector('.th-tabs');
+  const contentEl   = document.getElementById('th-content');
+  if (!promptEl || !contentEl) return;
+
+  let currentTradeId = null;
+  let pendingAction  = null;
+  let activeTab = 'open';
+
+  /** Parses + logs an AI response. Returns the new trade id (or null on failure). */
+  async function logAnalysis(rawText, ctx) {
+    try {
+      const parsed = P.parseAll(rawText);
+      const cfg = await phantom.config.get();
+      const payload = {
+        asset: ctx.asset || '',
+        exchange: (cfg.exchangeProvider || '').toLowerCase(),
+        timeframes: ctx.timeframes || ['60', '240'],
+        indicators_visible: ctx.indicators || [],
+        ai_model: cfg.tradingModel || 'claude-opus-4-7',
+        ai_decision: parsed.decision,
+        ai_confluence: parsed.score,
+        ai_bias_long:  parsed.bias.long,
+        ai_bias_short: parsed.bias.short,
+        ai_setup_long:  parsed.setupLong,
+        ai_setup_short: parsed.setupShort,
+        market_context: ctx.market_context || null,
+        full_response: rawText.slice(0, 12000),
+        source: ctx.source || 'manual'
+      };
+      const result = await phantom.trades.log(payload);
+      if (!result.ok) {
+        console.warn('[TradeLog] log failed', result.error);
+        return null;
+      }
+      return result.id;
+    } catch (e) {
+      console.warn('[TradeLog] exception during log', e);
+      return null;
+    }
+  }
+
+  function showPrompt(tradeId) {
+    currentTradeId = tradeId;
+    pendingAction = null;
+    entryRowEl.style.display = 'none';
+    statusEl.textContent = '';
+    entryInput.value = '';
+    sizeInput.value = '';
+    promptEl.style.display = 'block';
+  }
+
+  function hidePrompt() {
+    promptEl.style.display = 'none';
+    currentTradeId = null;
+    pendingAction = null;
+  }
+
+  promptEl.querySelectorAll('.tlp-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const action = btn.dataset.action;
+      if (!currentTradeId) return;
+      if (action === 'skipped') {
+        await phantom.trades.update(currentTradeId, { user_action: 'skipped' });
+        statusEl.textContent = '✅ Marcado como saltado.';
+        setTimeout(hidePrompt, 1000);
+        refreshTab();
+        return;
+      }
+      pendingAction = action;
+      entryRowEl.style.display = 'flex';
+      statusEl.textContent = action === 'long' ? '🟢 LONG — completá precio y tamaño (opcional) y guardá.' : '🔴 SHORT — completá precio y tamaño (opcional) y guardá.';
+    });
+  });
+
+  saveBtn.addEventListener('click', async () => {
+    if (!currentTradeId || !pendingAction) return;
+    const patch = {
+      user_action: pendingAction,
+      user_entry: entryInput.value ? parseFloat(entryInput.value) : null,
+      user_size_pct: sizeInput.value ? parseFloat(sizeInput.value) : null,
+      outcome: 'open'
+    };
+    const res = await phantom.trades.update(currentTradeId, patch);
+    if (res.ok) {
+      statusEl.textContent = '✅ Trade registrado. Cerrá cuando sepas el resultado.';
+      setTimeout(hidePrompt, 1500);
+      refreshTab();
+    } else {
+      statusEl.textContent = '⚠ Error: ' + res.error;
+    }
+  });
+
+  // ─── Tabs (open / closed / stats) ───
+  if (tabsWrap) {
+    tabsWrap.querySelectorAll('.th-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        tabsWrap.querySelectorAll('.th-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        activeTab = tab.dataset.tab;
+        refreshTab();
+      });
+    });
+  }
+
+  function fmtPct(n) {
+    if (n === null || n === undefined || isNaN(n)) return '—';
+    return (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
+  }
+  function fmtDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return d.toLocaleString();
+  }
+
+  async function refreshTab() {
+    if (activeTab === 'open') return renderOpen();
+    if (activeTab === 'closed') return renderClosed();
+    if (activeTab === 'stats') return renderStats();
+  }
+
+  async function renderOpen() {
+    const res = await phantom.trades.list({ open: true });
+    if (!res.ok || !res.trades.length) {
+      contentEl.innerHTML = '<div class="th-empty">Sin trades abiertos.</div>';
+      return;
+    }
+    contentEl.innerHTML = res.trades.map(t => `
+      <div class="th-trade-row" data-id="${t.id}">
+        <div class="th-trade-meta">
+          <div class="th-trade-asset">${escapeHTML(t.asset)} · ${t.user_action === 'long' ? '🟢 LONG' : '🔴 SHORT'}</div>
+          <div class="th-trade-sub">${fmtDate(t.created_at)} · entry ${t.user_entry ?? '—'} · ${t.ai_confluence || '—'} confluence · AI: ${t.ai_decision || '—'}</div>
+        </div>
+        <div class="th-trade-actions">
+          <button class="th-trade-btn win"  data-act="close-win"  data-id="${t.id}">Win</button>
+          <button class="th-trade-btn loss" data-act="close-loss" data-id="${t.id}">Loss</button>
+          <button class="th-trade-btn be"   data-act="close-be"   data-id="${t.id}">BE</button>
+          <button class="th-trade-btn"      data-act="close-cancel" data-id="${t.id}">✕</button>
+        </div>
+      </div>
+    `).join('');
+    contentEl.querySelectorAll('.th-trade-btn').forEach(btn => {
+      btn.addEventListener('click', () => closeTrade(btn.dataset.id, btn.dataset.act));
+    });
+  }
+
+  async function closeTrade(id, action) {
+    const outcomeMap = { 'close-win': 'win', 'close-loss': 'loss', 'close-be': 'breakeven', 'close-cancel': 'cancelled' };
+    const outcome = outcomeMap[action];
+    if (!outcome) return;
+    let pnl = null;
+    if (outcome === 'win' || outcome === 'loss') {
+      const input = prompt(outcome === 'win' ? 'Ganancia en % (ej 2.5):' : 'Pérdida en % (ej 1.2 — se guarda negativa):');
+      if (input === null) return;
+      pnl = parseFloat(input);
+      if (isNaN(pnl)) pnl = null;
+      else if (outcome === 'loss' && pnl > 0) pnl = -pnl;
+    }
+    const notes = (outcome === 'win' || outcome === 'loss') ? (prompt('Notas (opcional):') || '') : '';
+    await phantom.trades.update(id, {
+      outcome,
+      outcome_pnl_pct: pnl,
+      outcome_notes: notes,
+      closed_at: new Date().toISOString()
+    });
+    refreshTab();
+  }
+
+  async function renderClosed() {
+    const res = await phantom.trades.list({});
+    if (!res.ok) return;
+    const closed = res.trades.filter(t => t.outcome && t.outcome !== 'open');
+    if (!closed.length) {
+      contentEl.innerHTML = '<div class="th-empty">Sin trades cerrados todavía.</div>';
+      return;
+    }
+    contentEl.innerHTML = closed.slice(0, 30).map(t => {
+      const cls = t.outcome === 'win' ? 'pos' : t.outcome === 'loss' ? 'neg' : '';
+      return `
+        <div class="th-trade-row">
+          <div class="th-trade-meta">
+            <div class="th-trade-asset">${escapeHTML(t.asset)} · ${t.user_action === 'long' ? '🟢' : '🔴'} ${t.user_action?.toUpperCase()} · ${t.outcome.toUpperCase()}</div>
+            <div class="th-trade-sub">${fmtDate(t.closed_at || t.created_at)} · AI: ${t.ai_decision} ${t.ai_confluence || ''} ${t.outcome_notes ? '· ' + escapeHTML(t.outcome_notes).slice(0, 40) : ''}</div>
+          </div>
+          <div class="th-stat-value ${cls}" style="font-size:14px">${fmtPct(t.outcome_pnl_pct)}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  async function renderStats() {
+    const res = await phantom.trades.stats({});
+    if (!res.ok) {
+      contentEl.innerHTML = '<div class="th-empty">Sin datos.</div>';
+      return;
+    }
+    const s = res.stats;
+    const winRateCls = s.winRate >= 0.5 ? 'pos' : 'neg';
+    const pnlCls = s.totalPnlPct >= 0 ? 'pos' : 'neg';
+    const overrideText = s.overrideTrades > 0
+      ? `${(s.overrideWinRate * 100).toFixed(0)}% (${s.overrideTrades} trades)`
+      : '—';
+    contentEl.innerHTML = `
+      <div class="th-stats-grid">
+        <div class="th-stat-card">
+          <div class="th-stat-label">Win rate</div>
+          <div class="th-stat-value ${winRateCls}">${(s.winRate * 100).toFixed(1)}%</div>
+          <div class="th-stat-sub">${s.wins}W / ${s.losses}L de ${s.closed}</div>
+        </div>
+        <div class="th-stat-card">
+          <div class="th-stat-label">PnL acumulado</div>
+          <div class="th-stat-value ${pnlCls}">${fmtPct(s.totalPnlPct)}</div>
+          <div class="th-stat-sub">Promedio: ${fmtPct(s.avgPnlPct)}</div>
+        </div>
+        <div class="th-stat-card">
+          <div class="th-stat-label">Long vs Short</div>
+          <div class="th-stat-value">${(s.longWinRate * 100).toFixed(0)}% / ${(s.shortWinRate * 100).toFixed(0)}%</div>
+          <div class="th-stat-sub">Win-rate por dirección</div>
+        </div>
+        <div class="th-stat-card">
+          <div class="th-stat-label">Expectancy</div>
+          <div class="th-stat-value">${fmtPct(s.expectancy)}</div>
+          <div class="th-stat-sub">Avg W ${fmtPct(s.avgWinPct)} · Avg L ${fmtPct(s.avgLossPct)}</div>
+        </div>
+        <div class="th-stat-card" style="grid-column:1/-1">
+          <div class="th-stat-label">Override del AI (entraste cuando dijo WAIT)</div>
+          <div class="th-stat-value">${overrideText}</div>
+          <div class="th-stat-sub">Si esto es bajo, deberías hacerle más caso al WAIT</div>
+        </div>
+        <div class="th-stat-card" style="grid-column:1/-1">
+          <div class="th-stat-label">Por confluencia</div>
+          <div class="th-stat-sub" style="margin-top:6px">
+            ${Object.entries(s.byConfluence).map(([k, v]) =>
+              `<span style="margin-right:12px"><b>${k}</b>: ${(v.winRate * 100).toFixed(0)}% (${v.wins}/${v.total})</span>`
+            ).join('') || '—'}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Expose so other parts of renderer.js can call after each analysis.
+  window.PhantomTradeLog = {
+    afterAnalysis: async function(rawText, ctx) {
+      const id = await logAnalysis(rawText, ctx || {});
+      if (id) showPrompt(id);
+      return id;
+    },
+    refresh: refreshTab
+  };
+
+  // Initial render.
+  refreshTab();
+})();
+
+// ════════════════════════════════════════════════════════════════
+// X (Twitter) integration — settings UI + auth state.
+// ════════════════════════════════════════════════════════════════
+async function isXEnabled() {
+  try {
+    const cfg = await phantom.config.get();
+    return !!cfg.xEnabled;
+  } catch (_) { return false; }
+}
+
+async function refreshXAuthStatus() {
+  const statusEl = document.getElementById('x-auth-status');
+  const loginBtn = document.getElementById('btn-x-login');
+  const logoutBtn = document.getElementById('btn-x-logout');
+  if (!statusEl) return;
+  statusEl.textContent = 'comprobando…';
+  try {
+    const res = await phantom.x.checkAuth();
+    const authed = res.ok && res.authenticated;
+    if (authed) {
+      statusEl.textContent = '✅ Conectado';
+      statusEl.style.color = '#10b981';
+      if (loginBtn) loginBtn.style.display = 'none';
+      if (logoutBtn) logoutBtn.style.display = 'inline-block';
+    } else {
+      statusEl.textContent = '⚪ No conectado';
+      statusEl.style.color = '';
+      if (loginBtn) loginBtn.style.display = 'inline-block';
+      if (logoutBtn) logoutBtn.style.display = 'none';
+    }
+  } catch (e) {
+    statusEl.textContent = '⚠ error';
+  }
+}
+
+(function bindXSettingsUI() {
+  const loginBtn  = document.getElementById('btn-x-login');
+  const logoutBtn = document.getElementById('btn-x-logout');
+  const statusEl  = document.getElementById('x-auth-status');
+  if (!loginBtn) return;
+
+  loginBtn.addEventListener('click', async () => {
+    statusEl.textContent = '🔄 Abriendo ventana de login…';
+    statusEl.style.color = '';
+    loginBtn.disabled = true;
+    try {
+      const res = await phantom.x.login();
+      if (res.ok && res.authenticated) {
+        statusEl.textContent = '✅ Conectado';
+        statusEl.style.color = '#10b981';
+        loginBtn.style.display = 'none';
+        if (logoutBtn) logoutBtn.style.display = 'inline-block';
+      } else {
+        statusEl.textContent = '⚪ No se completó el login';
+        statusEl.style.color = '';
+      }
+    } catch (e) {
+      statusEl.textContent = '⚠ ' + (e.message || 'error');
+    } finally {
+      loginBtn.disabled = false;
+    }
+  });
+
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', async () => {
+      if (!confirm('¿Desconectar la cuenta de X? Tendrás que volver a iniciar sesión.')) return;
+      await phantom.x.logout();
+      refreshXAuthStatus();
+    });
+  }
+})();
+
+// ════════════════════════════════════════════════════════════════
+// MARKET PULSE — live trade tape + CVD bar + walls, polls every 5s.
+// Self-contained IIFE so it can pause/resume without leaking timers.
+// ════════════════════════════════════════════════════════════════
+(function setupMarketPulse() {
+  const panel    = document.getElementById('mp-panel');
+  if (!panel) return;
+  const assetEl  = document.getElementById('mp-asset');
+  const dot      = document.getElementById('mp-dot');
+  const statusEl = document.getElementById('mp-status');
+  const toggleBtn= document.getElementById('mp-toggle');
+  const popoutBtn= document.getElementById('mp-popout');
+  const buyPct   = document.getElementById('mp-buy-pct');
+  const sellPct  = document.getElementById('mp-sell-pct');
+  const fillBuy  = document.getElementById('mp-bias-fill-buy');
+  const fillSell = document.getElementById('mp-bias-fill-sell');
+  const verdict  = document.getElementById('mp-bias-verdict');
+  const tapeEl   = document.getElementById('mp-tape');
+  const wallsEl  = document.getElementById('mp-walls');
+
+  const POLL_MS = 5000;
+  let timer = null;
+  let paused = false;
+  let inflight = false;
+  let lastAsset = '';
+
+  function setDot(state, label) {
+    if (!dot) return;
+    dot.className = 'mp-dot ' + state;
+    if (statusEl) statusEl.textContent = label;
+  }
+
+  function fmtNum(n) {
+    if (n == null || isNaN(n)) return '—';
+    const a = Math.abs(n);
+    if (a >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+    if (a >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+    if (a >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+    return n.toFixed(0);
+  }
+  function fmtPrice(p) {
+    if (p == null) return '—';
+    return p >= 1000 ? p.toFixed(1) : p.toFixed(p >= 1 ? 4 : 6);
+  }
+  function fmtAge(s) {
+    if (s == null) return '';
+    if (s < 60)   return s + 's';
+    return Math.floor(s / 60) + 'm';
+  }
+
+  function verdictLabel(v) {
+    const tr = (k) => (typeof t === 'function' ? t(k) : k);
+    switch (v) {
+      case 'STRONG_BUY':  return { txt: tr('mp.strong_buy'),  cls: 'strong-buy' };
+      case 'BUY':         return { txt: tr('mp.buy'),         cls: 'buy' };
+      case 'STRONG_SELL': return { txt: tr('mp.strong_sell'), cls: 'strong-sell' };
+      case 'SELL':        return { txt: tr('mp.sell'),        cls: 'sell' };
+      default:            return { txt: tr('mp.balanced'),    cls: '' };
+    }
+  }
+
+  function renderBias(flow) {
+    if (!flow || (!flow.buy_notional && !flow.sell_notional)) {
+      buyPct.textContent = '—'; sellPct.textContent = '—';
+      fillBuy.style.width = '50%'; fillSell.style.width = '50%';
+      verdict.textContent = (typeof t === 'function' ? t('mp.waiting') : 'waiting');
+      verdict.className = 'mp-bias-verdict';
+      return;
+    }
+    const tot = flow.buy_notional + flow.sell_notional;
+    const buyP  = tot > 0 ? (flow.buy_notional  / tot) * 100 : 50;
+    const sellP = 100 - buyP;
+    buyPct.textContent  = '🟢 ' + buyP.toFixed(0) + '%';
+    sellPct.textContent = sellP.toFixed(0) + '% 🔴';
+    fillBuy.style.width = buyP + '%';
+    fillSell.style.width = sellP + '%';
+    const v = verdictLabel(flow.verdict);
+    verdict.textContent = v.txt + ' · CVD ' + (flow.cvd >= 0 ? '+$' : '-$') + fmtNum(Math.abs(flow.cvd));
+    verdict.className = 'mp-bias-verdict ' + v.cls;
+  }
+
+  function renderTape(trades) {
+    if (!trades || trades.length === 0) {
+      tapeEl.innerHTML = '<div class="mp-empty">' + (typeof t === 'function' ? t('mp.no_trades') : 'No trades') + '</div>';
+      return;
+    }
+    tapeEl.innerHTML = trades.map(tr => {
+      const cls = 'mp-row ' + tr.side.toLowerCase() + (tr.is_whale ? ' whale' : '');
+      const sideTxt = tr.side === 'BUY' ? '🟢' : '🔴';
+      return '<div class="' + cls + '">'
+        + '<span class="mp-side">' + sideTxt + '</span>'
+        + '<span class="mp-price">$' + fmtPrice(tr.price) + '</span>'
+        + '<span class="mp-qty">' + tr.qty.toFixed(3) + '</span>'
+        + '<span class="mp-age">' + fmtAge(tr.seconds_ago) + '</span>'
+        + '</div>';
+    }).join('');
+  }
+
+  function renderWalls(book) {
+    if (!book || (book.bid_walls.length === 0 && book.ask_walls.length === 0)) {
+      wallsEl.innerHTML = '<div class="mp-empty">' + (typeof t === 'function' ? t('mp.no_walls') : 'No walls') + '</div>';
+      return;
+    }
+    // Each "wall" is now a PRICE ZONE with { zone_start, zone_end, total_size,
+    // level_count, mult, dist_pct }. Render as a range like "$79,000-$79,049".
+    function zoneRow(side, w) {
+      const startStr = fmtPrice(w.zone_start);
+      const endStr   = fmtPrice(w.zone_end - 0.01);
+      const distStr  = (w.dist_pct >= 0 ? '+' : '') + w.dist_pct.toFixed(2) + '%';
+      const sideTxt  = side === 'bid' ? '🟢' : '🔴';
+      return (
+        '<div class="mp-wall ' + side + '">'
+        + '<span class="mp-wall-side">' + sideTxt + '</span>'
+        + '<span>$' + startStr + '–$' + endStr
+        + ' <span class="mp-wall-info">(' + distStr + ', ' + w.mult.toFixed(1) + '× median'
+        + (w.level_count ? ', ' + w.level_count + ' niveles' : '')
+        + ')</span></span>'
+        + '<span>' + w.total_size.toFixed(2) + '</span>'
+        + '</div>'
+      );
+    }
+    const rows = [];
+    // Asks (resistance) on top — closest to mid first
+    [...book.ask_walls].sort((a, b) => a.zone_start - b.zone_start).forEach(w => rows.push(zoneRow('ask', w)));
+    // Mid marker
+    if (book.mid) {
+      rows.push('<div class="mp-empty" style="padding:4px 0;font-size:10px">— mid $' + fmtPrice(book.mid) + ' —</div>');
+    }
+    // Bids (support) below — closest to mid first
+    [...book.bid_walls].sort((a, b) => b.zone_start - a.zone_start).forEach(w => rows.push(zoneRow('bid', w)));
+    wallsEl.innerHTML = rows.join('');
+  }
+
+  async function tick() {
+    if (paused || inflight) return;
+    const asset = (typeof tradingAssetInput !== 'undefined' && tradingAssetInput)
+      ? tradingAssetInput.value.trim()
+      : '';
+    if (!asset) {
+      setDot('paused', typeof t === 'function' ? t('mp.idle') : 'idle');
+      return;
+    }
+    inflight = true;
+    setDot('live', typeof t === 'function' ? t('mp.live') : 'live');
+    try {
+      const res = await phantom.marketpulse.fetch({ asset });
+      if (!res.ok || !res.data) {
+        setDot('error', typeof t === 'function' ? t('mp.error') : 'error');
+        return;
+      }
+      const d = res.data;
+      lastAsset = asset;
+      assetEl.textContent = d.symbol;
+      renderBias(d.flow);
+      renderTape(d.trades_recent);
+      renderWalls(d.book);
+      setDot('live', new Date().toLocaleTimeString());
+    } catch (e) {
+      setDot('error', typeof t === 'function' ? t('mp.error') : 'error');
+    } finally {
+      inflight = false;
+    }
+  }
+
+  function start() {
+    if (timer) return;
+    paused = false;
+    if (toggleBtn) toggleBtn.textContent = '⏸';
+    tick();
+    timer = setInterval(tick, POLL_MS);
+  }
+  function pause() {
+    paused = true;
+    if (timer) { clearInterval(timer); timer = null; }
+    if (toggleBtn) toggleBtn.textContent = '▶';
+    setDot('paused', typeof t === 'function' ? t('mp.paused') : 'paused');
+  }
+
+  if (toggleBtn) toggleBtn.addEventListener('click', () => {
+    if (paused || !timer) start();
+    else                  pause();
+  });
+  if (popoutBtn) popoutBtn.addEventListener('click', () => {
+    phantom.window.openTrading().catch(() => {});
+  });
+
+  // Only auto-start once the trading panel is visible (saves bandwidth).
+  function startWhenTradingVisible() {
+    const tp = document.getElementById('trading-panel');
+    if (tp && tp.style.display !== 'none' && tp.offsetParent !== null) {
+      start();
+    }
+  }
+  startWhenTradingVisible();
+  // Watch the trading panel's visibility — start/stop with it.
+  const tp = document.getElementById('trading-panel');
+  if (tp) {
+    const obs = new MutationObserver(() => {
+      if (tp.style.display === 'none') pause();
+      else if (!timer && !paused) start();
+    });
+    obs.observe(tp, { attributes: true, attributeFilter: ['style'] });
+  }
+})();
+
+// ════════════════════════════════════════════════════════════════
+// SCALP RADAR — high-frequency tactical panel (refresh every 2s).
+// Reads computed metrics from the main process (which knows the
+// previous snapshot, so CVD/spread velocity are derived server-side).
+// ════════════════════════════════════════════════════════════════
+(function setupScalpRadar() {
+  const panel = document.getElementById('scalp-panel');
+  if (!panel) return;
+
+  const $id = (id) => document.getElementById(id);
+  const els = {
+    mid:        $id('scalp-mid'),
+    verdict:    $id('scalp-verdict'),
+    pressureFill: $id('scalp-pressure-fill'),
+    pressureValue:$id('scalp-pressure-value'),
+    reason:     $id('scalp-reason'),
+    imbalance:  $id('scalp-imbalance'),
+    cvdVel:     $id('scalp-cvd-vel'),
+    aggressor:  $id('scalp-aggressor'),
+    tapeSpeed:  $id('scalp-tape-speed'),
+    spread:     $id('scalp-spread'),
+    whaleFlow:  $id('scalp-whale-flow'),
+    magnet:     $id('scalp-magnet'),
+    liq:        $id('scalp-liq'),
+    trap:       $id('scalp-trap')
+  };
+
+  let timer = null;
+  let inflight = false;
+
+  function fmtUsd(n) {
+    if (n == null || !isFinite(n)) return '—';
+    const a = Math.abs(n);
+    if (a >= 1e6) return (n >= 0 ? '$' : '-$') + (a / 1e6).toFixed(2) + 'M';
+    if (a >= 1e3) return (n >= 0 ? '$' : '-$') + (a / 1e3).toFixed(1) + 'k';
+    return (n >= 0 ? '$' : '-$') + Math.round(a);
+  }
+
+  function render(r) {
+    if (!r) {
+      els.reason.textContent = 'esperando datos…';
+      return;
+    }
+    els.mid.textContent = r.mid != null ? '$' + Math.round(r.mid).toLocaleString() : '—';
+
+    // Verdict pill
+    const v = r.verdict || 'WAIT';
+    els.verdict.textContent = v.replace(/_/g, ' ');
+    els.verdict.classList.remove('long', 'short', 'fade');
+    if (v === 'LONG_NOW')   els.verdict.classList.add('long');
+    if (v === 'SHORT_NOW')  els.verdict.classList.add('short');
+    if (v === 'FADE_LONG')  els.verdict.classList.add('long');
+    if (v === 'FADE_SHORT') els.verdict.classList.add('short');
+    if (v === 'FADE_LONG' || v === 'FADE_SHORT') els.verdict.classList.add('fade');
+
+    // Pressure: signed -100..+100. Bar grows out from center.
+    const p = Math.max(-100, Math.min(100, r.pressure || 0));
+    const pct = Math.abs(p) / 2; // half-bar width = |p|/100 * 50%
+    els.pressureFill.style.width = pct + '%';
+    if (p >= 0) {
+      els.pressureFill.style.left = '50%';
+      els.pressureFill.classList.remove('neg');
+    } else {
+      els.pressureFill.style.left = (50 - pct) + '%';
+      els.pressureFill.classList.add('neg');
+    }
+    els.pressureValue.textContent = (p > 0 ? '+' : '') + p;
+    els.pressureValue.style.color = p > 30 ? '#2effa3' : p < -30 ? '#ff4d4d' : '#fff3d6';
+
+    els.reason.textContent = r.reason || '—';
+
+    els.imbalance.textContent = r.book_imbalance != null ? r.book_imbalance.toFixed(2) + '×' : '—';
+    els.cvdVel.textContent    = fmtUsd(r.cvd_velocity_usd_per_min);
+    els.aggressor.textContent = `BUY ${r.aggressor_pct.buy_pct}% / SELL ${r.aggressor_pct.sell_pct}%`;
+    els.tapeSpeed.textContent = (r.tape_speed_per_sec || 0).toFixed(2);
+    els.spread.textContent    = r.spread_pct != null ? r.spread_pct.toFixed(3) + '% ' + (r.spread_velocity === 'WIDENING' ? '▲' : r.spread_velocity === 'TIGHTENING' ? '▼' : '·') : '—';
+    els.whaleFlow.textContent = `${fmtUsd(r.whale_flow_usd.buy)} / ${fmtUsd(r.whale_flow_usd.sell)}`;
+
+    if (r.nearest_magnet) {
+      const m = r.nearest_magnet;
+      const dir = m.distance_usd > 0 ? '▲ arriba' : '▼ abajo';
+      els.magnet.innerHTML = `🧲 imán: $${Math.round(m.price).toLocaleString()} (${m.side === 'LONG_LIQ' ? 'longs rekt' : 'shorts rekt'}, ${fmtUsd(m.notional_usd)}) ${dir} ${fmtUsd(Math.abs(m.distance_usd))}`;
+    } else {
+      els.magnet.textContent = '';
+    }
+
+    const L = r.liquidations;
+    if (L && L.total_liq_usd > 0) {
+      const since = L.last_event_ago_sec != null ? `(último ${L.last_event_ago_sec}s)` : '';
+      els.liq.innerHTML = `💥 liq 5m: longs ${fmtUsd(L.longs_liq_usd)} / shorts ${fmtUsd(L.shorts_liq_usd)} ${since}`;
+    } else {
+      els.liq.textContent = '';
+    }
+
+    els.trap.textContent = r.trap_warning ? '⚠ ' + r.trap_warning : '';
+  }
+
+  async function tick() {
+    if (inflight) return;
+    const assetInput = document.getElementById('trading-asset-input');
+    const asset = assetInput && assetInput.value.trim() ? assetInput.value.trim() : 'BTC/USDT';
+    inflight = true;
+    try {
+      const resp = await phantom.scalpradar.fetch({ asset });
+      if (resp && resp.ok && resp.data) render(resp.data);
+    } catch (e) {
+      console.warn('[scalp-radar] tick error', e);
+    } finally {
+      inflight = false;
+    }
+  }
+
+  function start() {
+    if (timer) return;
+    tick();
+    timer = setInterval(tick, 2000);
+  }
+  function stop() {
+    if (timer) { clearInterval(timer); timer = null; }
+  }
+
+  // Only tick while the plan-view (deep-info bundle) is visible — otherwise
+  // we burn IPC and re-render off-screen pixels.
+  const obs = new MutationObserver(() => {
+    if (document.body.classList.contains('show-plan')) start();
+    else stop();
+  });
+  obs.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  if (document.body.classList.contains('show-plan')) start();
+})();
+
+// ════════════════════════════════════════════════════════════════
+// Open Trading in a separate window — main "🪟" button in the
+// trading panel header.
+// ════════════════════════════════════════════════════════════════
+(function setupTradingPopoutButton() {
+  const btn = document.getElementById('btn-trading-popout');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    phantom.window.openTrading().catch(() => {});
+  });
+})();
+
+// ════════════════════════════════════════════════════════════════
+// ?view=trading — when the renderer is loaded into the separate
+// Trading window, hide all non-trading panels so the user sees
+// only the analyze section + Market Pulse, statically laid out.
+// ════════════════════════════════════════════════════════════════
+(function setupTradingStandaloneView() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('view') !== 'trading') return;
+
+    // Tag the body so popout-scoped CSS rules kick in (single scroll container,
+    // no nested max-height caps, sections render fully and stacked).
+    document.body.classList.add('trading-popout');
+
+    // Hide everything in the main body except trading-panel.
+    const body = document.querySelector('.body');
+    if (body) {
+      for (const child of Array.from(body.children)) {
+        if (child.id === 'trading-panel') continue;
+        if (child.classList && child.classList.contains('status')) continue; // keep status line
+        child.style.display = 'none';
+      }
+    }
+    // Force trading panel visible and expanded.
+    const tp = document.getElementById('trading-panel');
+    if (tp) {
+      tp.style.display = 'block';
+      tp.classList.remove('collapsed');
+      const body2 = tp.querySelector('.collapsible-body');
+      // Don't override display:flex from CSS — popout-scoped styles turn this
+      // collapsible body into the single scrollable column for the window.
+      if (body2) body2.style.removeProperty('display');
+    }
+    // Hide the action buttons row (Leer pantalla / Contestar) at the top.
+    const actions = document.querySelector('.actions');
+    if (actions) actions.style.display = 'none';
+    // Update the document title for clarity in the OS window-list.
+    document.title = 'Phantom — Trading';
+    // Hide the popout button itself in the popped-out window (already separate).
+    const popoutBtn = document.getElementById('btn-trading-popout');
+    if (popoutBtn) popoutBtn.style.display = 'none';
+  } catch (e) {
+    console.warn('[trading standalone view] setup failed', e);
+  }
+})();
+
+// ════════════════════════════════════════════════════════════════
+// INSIGHTS — short AI reasoning snippets every 15 min + manual button.
+// Lightweight call (maxTokens 400) that explains the BIAS in 1-3 lines
+// using the live market data, like:
+//   "Bearish bias by structure, but CVD positive and whales buying at $79K
+//    sustain a technical bounce before continuing the drop."
+// ════════════════════════════════════════════════════════════════
+(function setupInsights() {
+  const panel       = document.getElementById('ins-panel');
+  if (!panel) return;
+  const feedEl      = document.getElementById('ins-feed');
+  const statusEl    = document.getElementById('ins-status');
+  const countdownEl = document.getElementById('ins-countdown');
+  const genBtn      = document.getElementById('ins-generate');
+  const toggleBtn   = document.getElementById('ins-toggle');
+
+  const POLL_MS    = 15 * 60 * 1000;   // 15 min
+  const MAX_FEED   = 20;
+  const STORAGE_KEY = 'phantom_insights_feed_v1';
+
+  let history    = [];
+  let nextAt     = Date.now() + POLL_MS;
+  let timer      = null;
+  let countdown  = null;
+  let paused     = false;
+  let busy       = false;
+
+  /* ─── storage ─── */
+  function loadHistory() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) history = JSON.parse(raw).slice(0, MAX_FEED);
+    } catch (_) { history = []; }
+  }
+  function saveHistory() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(history.slice(0, MAX_FEED))); }
+    catch (_) {}
+  }
+
+  /* ─── render ─── */
+  function fmtTime(iso) {
+    const d = new Date(iso);
+    return d.toLocaleTimeString();
+  }
+  function dirClass(dir) {
+    const d = (dir || '').toUpperCase();
+    if (d === 'UP') return 'up';
+    if (d === 'DOWN') return 'down';
+    return 'range';
+  }
+  function dirLabel(dir) {
+    const d = (dir || 'RANGE').toUpperCase();
+    if (d === 'UP') return '↑ UP';
+    if (d === 'DOWN') return '↓ DOWN';
+    return '↔ RANGE';
+  }
+  function renderFeed() {
+    if (!history.length) {
+      feedEl.innerHTML = '<div class="ins-empty">' + (typeof t === 'function' ? t('ins.empty') : 'No insights yet.') + '</div>';
+      return;
+    }
+    feedEl.innerHTML = history.map(it => {
+      const cls = dirClass(it.direction) + (it.manual ? ' manual' : '');
+      const assetTag = it.asset ? `<span>${escapeHTML(it.asset)}</span>` : '';
+      return `
+        <div class="ins-item ${cls}">
+          <div class="ins-item-meta">
+            <span>${assetTag}<span class="ins-item-dir">${dirLabel(it.direction)}</span></span>
+            <span class="ins-item-time">${fmtTime(it.timestamp)}</span>
+          </div>
+          <div class="ins-item-text">${escapeHTML(it.text)}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  /* ─── countdown ─── */
+  function updateCountdown() {
+    if (paused) {
+      countdownEl.textContent = '· ' + (typeof t === 'function' ? t('ins.paused') : 'paused');
+      return;
+    }
+    const ms = Math.max(0, nextAt - Date.now());
+    const m = Math.floor(ms / 60000);
+    const s = Math.floor((ms % 60000) / 1000);
+    const label = typeof t === 'function' ? t('ins.next_in') : 'next';
+    countdownEl.textContent = `· ${label} ${m}:${String(s).padStart(2, '0')}`;
+  }
+
+  /* ─── lightweight AI call ─── */
+  async function buildContext(asset) {
+    // Pull the same live data sources Market Pulse uses + minimal coinglass.
+    const [mp, cg] = await Promise.all([
+      phantom.marketpulse.fetch({ asset }).catch(() => ({ ok: false })),
+      phantom.coinglass.fetch({ symbol: asset }).catch(() => ({ ok: false }))
+    ]);
+    const lines = [];
+    lines.push(`Asset: ${asset}`);
+    if (mp && mp.ok && mp.data) {
+      const d = mp.data;
+      if (d.book && d.book.mid) lines.push(`Mid: $${d.book.mid.toFixed(2)} | spread ${d.book.spread_pct.toFixed(4)}%`);
+      if (d.flow) {
+        const f = d.flow;
+        lines.push(`CVD: ${f.cvd >= 0 ? '+' : '-'}$${Math.abs(f.cvd).toFixed(0)} (${f.verdict})`);
+        lines.push(`Window flow: buys $${f.buy_notional.toFixed(0)} vs sells $${f.sell_notional.toFixed(0)}`);
+      }
+      if (d.book && (d.book.bid_walls.length || d.book.ask_walls.length)) {
+        const fmtZone = (w) => `$${w.zone_start.toFixed(2)}–$${(w.zone_end - 0.01).toFixed(2)}`;
+        if (d.book.bid_walls[0]) {
+          const b = d.book.bid_walls[0];
+          lines.push(`Bid zone: ${fmtZone(b)} (${b.total_size.toFixed(2)} ${d.symbol.replace('USDT','')}, ${b.mult.toFixed(1)}× median, ${b.dist_pct.toFixed(2)}%)`);
+        }
+        if (d.book.ask_walls[0]) {
+          const a = d.book.ask_walls[0];
+          lines.push(`Ask zone: ${fmtZone(a)} (${a.total_size.toFixed(2)} ${d.symbol.replace('USDT','')}, ${a.mult.toFixed(1)}× median, +${a.dist_pct.toFixed(2)}%)`);
+        }
+      }
+      const whales = (d.trades_recent || []).filter(t => t.is_whale).slice(0, 4);
+      if (whales.length) {
+        lines.push(`Recent whale prints: ${whales.map(w => `${w.side} ${w.qty.toFixed(2)} @ $${w.price.toFixed(1)} (${w.seconds_ago}s ago)`).join(' · ')}`);
+      }
+    }
+    if (cg && cg.ok && cg.promptBlock) {
+      // Pull the most relevant 3-4 lines, not the whole block.
+      const cgLines = cg.promptBlock.split('\n').slice(0, 8).join('\n');
+      lines.push('Coinglass:\n' + cgLines);
+    }
+    return lines.join('\n');
+  }
+
+  async function generate({ manual = false } = {}) {
+    if (busy) return;
+    const asset = (typeof tradingAssetInput !== 'undefined' && tradingAssetInput)
+      ? tradingAssetInput.value.trim()
+      : '';
+    if (!asset) {
+      statusEl.textContent = typeof t === 'function' ? t('ins.no_asset') : 'no asset';
+      return;
+    }
+    busy = true;
+    genBtn.disabled = true;
+    statusEl.textContent = typeof t === 'function' ? t('ins.generating') : 'thinking…';
+
+    try {
+      const uiLang = (typeof getLanguage === 'function') ? getLanguage() : 'es';
+      const langName = (typeof LANG_NAMES !== 'undefined' && LANG_NAMES[uiLang]) || 'Spanish';
+      const ctx = await buildContext(asset);
+
+      const system = `You are a senior crypto trader giving a SHORT tactical insight.
+
+ABSOLUTE PRIORITY — RESPOND IN ${langName} (${uiLang}). Every word.
+
+OUTPUT FORMAT — exactly these two lines, nothing else:
+DIRECTION: <UP|DOWN|RANGE>
+<one or two sentences (max 50 words) explaining the bias using the live data: structure, flow, walls, whales. NO indicator names. NO news. NO trade setups. NO disclaimers.>
+
+Example of GOOD output:
+DIRECTION: DOWN
+Sesgo bajista por estructura (lower highs en 4H), pero CVD positivo y whales comprando en $79K sostienen un rebote técnico antes de continuar la caída.
+
+Example of BAD output (too long, has indicators, has setups — do NOT do this):
+DIRECTION: DOWN
+The RSI is at 38 indicating oversold conditions, MACD shows bearish divergence... [too verbose, forbidden]`;
+
+      const user = `Live market data for ${asset}:\n${ctx}\n\nGive me the one-line insight now.`;
+
+      const cfg = await phantom.config.get();
+      const model = cfg.tradingModel || 'claude-opus-4-7';
+      const resp = await phantom.ai.call({
+        messages: [{ role: 'user', content: user }],
+        system,
+        model,
+        maxTokens: 400
+      });
+
+      const raw = (resp && resp.text || '').trim();
+      const dirMatch = raw.match(/DIRECTION\s*:\s*(UP|DOWN|RANGE)/i);
+      const direction = dirMatch ? dirMatch[1].toUpperCase() : 'RANGE';
+      const text = raw.replace(/^DIRECTION\s*:\s*(UP|DOWN|RANGE)\s*[\r\n]+/i, '').trim();
+
+      const item = {
+        timestamp: new Date().toISOString(),
+        asset,
+        direction,
+        text: text || raw,
+        manual: !!manual
+      };
+      history = [item, ...history].slice(0, MAX_FEED);
+      saveHistory();
+      renderFeed();
+      statusEl.textContent = new Date().toLocaleTimeString();
+    } catch (e) {
+      console.warn('[insights] generate failed', e);
+      statusEl.textContent = typeof t === 'function' ? t('ins.error') : 'error';
+    } finally {
+      busy = false;
+      genBtn.disabled = false;
+      nextAt = Date.now() + POLL_MS;
+    }
+  }
+
+  /* ─── lifecycle ─── */
+  function start() {
+    paused = false;
+    if (toggleBtn) toggleBtn.textContent = '⏸';
+    if (timer) return;
+    nextAt = Date.now() + POLL_MS;
+    timer = setInterval(() => {
+      if (!paused && Date.now() >= nextAt) generate({ manual: false });
+    }, 5000);  // check every 5s, generate when 15-min mark hits
+    if (!countdown) countdown = setInterval(updateCountdown, 1000);
+    updateCountdown();
+  }
+  function pause() {
+    paused = true;
+    if (toggleBtn) toggleBtn.textContent = '▶';
+    if (timer) { clearInterval(timer); timer = null; }
+    updateCountdown();
+  }
+
+  if (genBtn) genBtn.addEventListener('click', () => generate({ manual: true }));
+  if (toggleBtn) toggleBtn.addEventListener('click', () => {
+    if (paused || !timer) start();
+    else pause();
+  });
+
+  /* ─── boot ─── */
+  loadHistory();
+  renderFeed();
+
+  // Watch trading panel visibility — start when visible.
+  const tp = document.getElementById('trading-panel');
+  function maybeStart() {
+    if (tp && tp.style.display !== 'none' && tp.offsetParent !== null) start();
+  }
+  maybeStart();
+  if (tp) {
+    new MutationObserver(() => {
+      if (tp.style.display === 'none') pause();
+      else if (!timer && !paused) start();
+    }).observe(tp, { attributes: true, attributeFilter: ['style'] });
+  }
+})();
+
+// ════════════════════════════════════════════════════════════════
+// WATCHER MODE — collapse everything except Market Pulse + Insights.
+// Resizes the window to a compact size and pins the state in
+// localStorage so it survives reloads.
+// ════════════════════════════════════════════════════════════════
+(function setupWatcherMode() {
+  const btn  = document.getElementById('btn-watcher');
+  const exit = document.getElementById('watcher-exit');
+  if (!btn) return;
+
+  const STORAGE_KEY = 'phantom_watcher_mode_v1';
+  // Tall + reasonably narrow — main.js clamps to workArea bounds, so 2000
+  // height becomes "as tall as your screen minus 40px".
+  const WATCHER_SIZE = { width: 560, height: 2000 };
+  let prevSize = null;     // saved between toggle on/off
+
+  function setBodyMode(on) {
+    document.body.classList.toggle('watcher-mode', on);
+    btn.classList.toggle('on', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    try { localStorage.setItem(STORAGE_KEY, on ? '1' : '0'); } catch (_) {}
+  }
+
+  async function enter() {
+    // Remember current window size so we can restore on exit.
+    try {
+      const win = window;
+      prevSize = { width: win.outerWidth || win.innerWidth, height: win.outerHeight || win.innerHeight };
+    } catch (_) { prevSize = null; }
+
+    // Ensure trading panel is visible + expanded so the live panels render.
+    const tp = document.getElementById('trading-panel');
+    if (tp) {
+      tp.style.display = 'block';
+      tp.classList.remove('collapsed');
+      const tpBody = tp.querySelector('.collapsible-body');
+      if (tpBody) tpBody.style.display = 'block';
+    }
+    // Auto-enable trading toggle in case it was off (so the panel actually shows).
+    try {
+      const cfgChk = document.getElementById('cfg-trading');
+      if (cfgChk && !cfgChk.checked) {
+        cfgChk.checked = true;
+        // Trigger any wired listeners.
+        cfgChk.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    } catch (_) {}
+
+    setBodyMode(true);
+
+    // Shrink the window. If the call fails (different window or unavailable),
+    // we just stay in CSS-only mode.
+    try { await phantom.window.resize(WATCHER_SIZE); } catch (_) {}
+  }
+
+  async function leave() {
+    setBodyMode(false);
+    // CRITICAL: clear the inline styles we set on enter(), otherwise the
+    // panel keeps `display: block` inline which OVERRIDES the original CSS
+    // (often `display: flex`) and silently breaks overflow on inner
+    // scrollable areas like .mp-walls / .mp-tape / .ins-feed. The user saw
+    // this as "Market Pulse no scrollea después de salir del modo ventana".
+    const tp = document.getElementById('trading-panel');
+    if (tp) {
+      tp.style.display = '';
+      const tpBody = tp.querySelector('.collapsible-body');
+      if (tpBody) tpBody.style.display = '';
+    }
+    if (prevSize && prevSize.width && prevSize.height) {
+      try { await phantom.window.resize(prevSize); } catch (_) {}
+    } else {
+      // Fallback to the canonical "trading enabled" size if we never captured
+      // a prior size (e.g. watcher was the first thing the user toggled).
+      try { await phantom.window.resize({ width: 720, height: 1100 }); } catch (_) {}
+    }
+    prevSize = null;
+    // Force a reflow so the layout reapplies cleanly (defensive — fixes
+    // edge cases where the browser caches an old scroll height).
+    if (tp) { void tp.offsetHeight; }
+  }
+
+  btn.addEventListener('click', () => {
+    if (document.body.classList.contains('watcher-mode')) leave();
+    else enter();
+  });
+  if (exit) exit.addEventListener('click', () => leave());
+
+  // ESC also exits watcher mode (only when active).
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.body.classList.contains('watcher-mode')) {
+      leave();
+    }
+  });
+
+  // Restore previous state on load.
+  try {
+    if (localStorage.getItem(STORAGE_KEY) === '1') {
+      // Small delay so the rest of the UI mounts first.
+      setTimeout(() => enter(), 100);
+    }
+  } catch (_) {}
+})();
+
+// ════════════════════════════════════════════════════════════════
+// PRICE PLAYBOOK — on-demand deep AI analysis that pulls ALL data
+// (charts, exchange, coinglass, orderflow, trade tape, hyperliquid,
+// market pulse) and outputs 4-6 conditional scenarios with explicit
+// price triggers / entries / SLs / TPs.
+// ════════════════════════════════════════════════════════════════
+(function setupPricePlaybook() {
+  const panel   = document.getElementById('pb-panel');
+  if (!panel) return;
+  const btn     = document.getElementById('pb-generate');
+  const headerBtn = document.getElementById('btn-trading-playbook');
+  const bodyEl  = document.getElementById('pb-body');
+  const metaEl  = document.getElementById('pb-meta');
+  const statusEl= document.getElementById('pb-status');
+
+  const STORAGE_KEY = 'phantom_playbook_v1';
+  let busy = false;
+  let last = null;
+
+  function escapeText(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function loadLast() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        last = JSON.parse(raw);
+        render();
+      }
+    } catch (_) {}
+  }
+
+  function saveLast() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(last)); } catch (_) {}
+  }
+
+  function render() {
+    if (!last) {
+      bodyEl.innerHTML = '<div class="pb-empty">' + (typeof t === 'function' ? t('playbook.empty') : 'No plan yet.') + '</div>';
+      metaEl.textContent = '';
+      return;
+    }
+    metaEl.textContent = '· ' + (last.asset || '') + ' · ' + new Date(last.timestamp).toLocaleTimeString();
+
+    // Render the parsed plan: levels + scenarios + sequence.
+    let html = '';
+
+    if (last.parsed.levels && last.parsed.levels.length) {
+      html += '<h2>Niveles críticos</h2><div class="pb-levels">';
+      for (const lv of last.parsed.levels) {
+        html += '<div class="pb-level">'
+          + '<span class="pb-level-price">$' + escapeText(lv.price) + '</span>'
+          + '<span class="pb-level-role">' + escapeText(lv.role) + '</span>'
+          + '</div>';
+      }
+      html += '</div>';
+    }
+
+    if (last.parsed.scenarios && last.parsed.scenarios.length) {
+      html += '<h2>Escenarios</h2>';
+      for (const s of last.parsed.scenarios) {
+        const side = (s.action || '').toLowerCase();
+        const cls = side === 'long' ? 'long' : side === 'short' ? 'short' : 'wait';
+        html += '<div class="pb-scenario ' + cls + '">'
+          + '<div class="pb-scen-title">'
+          + '<span>' + escapeText(s.name || 'Scenario') + ' — ' + escapeText(s.action || 'WAIT') + '</span>'
+          + (s.confidence ? '<span class="pb-scen-confidence">' + escapeText(s.confidence) + '</span>' : '')
+          + '</div>'
+          + '<div class="pb-scen-trigger"><b>Si:</b> ' + escapeText(s.trigger || '—') + '</div>'
+          + '<div class="pb-scen-prices">';
+        if (s.entry) html += pbPrice('Entry', s.entry);
+        if (s.sl)    html += pbPrice('SL',    s.sl);
+        if (s.tp1)   html += pbPrice('TP1',   s.tp1);
+        if (s.tp2)   html += pbPrice('TP2',   s.tp2);
+        if (s.tp3)   html += pbPrice('TP3',   s.tp3);
+        if (s.size)  html += pbPrice('Size',  s.size);
+        html += '</div>';
+        if (s.reason) html += '<div class="pb-scen-reason">' + escapeText(s.reason) + '</div>';
+        html += '</div>';
+      }
+    }
+
+    if (last.parsed.sequence) {
+      html += '<h2>Secuencia probable</h2><div style="white-space:pre-wrap;font-size:11.5px;line-height:1.6;opacity:0.92">' + escapeText(last.parsed.sequence) + '</div>';
+    }
+
+    if (!html) {
+      // Fallback: just dump the raw text.
+      html = '<div style="white-space:pre-wrap;font-size:11.5px;line-height:1.6">' + escapeText(last.raw || '') + '</div>';
+    }
+
+    bodyEl.innerHTML = html;
+  }
+  function pbPrice(label, value) {
+    return '<div class="pb-scen-price">'
+      + '<div class="pb-scen-price-label">' + escapeText(label) + '</div>'
+      + '<div class="pb-scen-price-value">' + escapeText(value) + '</div>'
+      + '</div>';
+  }
+
+  /** Parse the AI response into structured scenarios. The prompt asks the AI
+   *  to use these EXACT tags so the parser is reliable. */
+  function parsePlaybook(raw) {
+    const out = { levels: [], scenarios: [], sequence: null };
+
+    // Levels: [LEVEL] $X | role | reason [/LEVEL]
+    const levelRe = /\[LEVEL\]([\s\S]*?)\[\/LEVEL\]/gi;
+    let lm;
+    while ((lm = levelRe.exec(raw)) !== null) {
+      const body = lm[1].trim();
+      const parts = body.split('|').map(p => p.trim());
+      if (parts.length >= 2) {
+        out.levels.push({
+          price: parts[0].replace(/^\$/, ''),
+          role:  parts.slice(1).join(' · ')
+        });
+      }
+    }
+
+    // Scenarios: [SCENARIO name="..." action="LONG|SHORT|WAIT" confidence="★★★"]
+    //   TRIGGER: ...
+    //   ENTRY: ...
+    //   SL: ...
+    //   TP1: ...
+    //   ...
+    //   REASON: ...
+    // [/SCENARIO]
+    const scenRe = /\[SCENARIO\b([^\]]*)\]([\s\S]*?)\[\/SCENARIO\]/gi;
+    let sm;
+    while ((sm = scenRe.exec(raw)) !== null) {
+      const attrs = sm[1];
+      const body = sm[2];
+      const s = {};
+      const aMatch = (re) => { const m = attrs.match(re); return m ? m[1] : null; };
+      s.name       = aMatch(/\bname\s*=\s*"([^"]+)"/i)       || 'Escenario';
+      s.action     = (aMatch(/\baction\s*=\s*"([^"]+)"/i)   || 'WAIT').toUpperCase();
+      s.confidence = aMatch(/\bconfidence\s*=\s*"([^"]+)"/i) || null;
+      const field = (key) => {
+        const m = body.match(new RegExp('^\\s*' + key + '\\s*:\\s*([^\\n]+)', 'mi'));
+        return m ? m[1].trim() : null;
+      };
+      s.trigger = field('TRIGGER');
+      s.entry   = field('ENTRY');
+      s.sl      = field('SL');
+      s.tp1     = field('TP1');
+      s.tp2     = field('TP2');
+      s.tp3     = field('TP3');
+      s.size    = field('SIZE');
+      s.reason  = field('REASON');
+      // Extract the [CONDITIONS] block per scenario (machine-checkable rules).
+      const condMatch = body.match(/\[CONDITIONS\]([\s\S]*?)\[\/CONDITIONS\]/i);
+      if (condMatch && window.PlaybookParser) {
+        s.conditions = window.PlaybookParser.parseConditionsBlock(condMatch[1]);
+      } else {
+        s.conditions = [];
+      }
+      out.scenarios.push(s);
+    }
+
+    // Sequence: [SEQUENCE] ... [/SEQUENCE]
+    const seqMatch = raw.match(/\[SEQUENCE\]([\s\S]*?)\[\/SEQUENCE\]/i);
+    if (seqMatch) out.sequence = seqMatch[1].trim();
+
+    return out;
+  }
+
+  async function generate() {
+    if (busy) return;
+    const asset = (typeof tradingAssetInput !== 'undefined' && tradingAssetInput)
+      ? tradingAssetInput.value.trim()
+      : '';
+    if (!asset) {
+      statusEl.textContent = typeof t === 'function' ? t('playbook.no_asset') : 'no asset';
+      return;
+    }
+    busy = true;
+    if (btn) btn.disabled = true;
+    if (headerBtn) headerBtn.disabled = true;
+    statusEl.textContent = typeof t === 'function' ? t('playbook.generating') : 'analyzing…';
+
+    try {
+      // Pull EVERYTHING the agent should know about.
+      const xIncluded = await (typeof isXEnabled === 'function' ? isXEnabled() : Promise.resolve(false));
+      const [exchangeData, cgRes, ofRes, ttRes, hlRes, dlRes, newsRes, mpRes] = await Promise.all([
+        (typeof fetchExchangeData === 'function') ? fetchExchangeData() : Promise.resolve(null),
+        phantom.coinglass.fetch({ symbol: asset }).catch(() => ({ ok: false })),
+        phantom.orderflow.fetch({ asset }).catch(() => ({ ok: false })),
+        phantom.tradetape.fetch({ asset }).catch(() => ({ ok: false })),
+        phantom.hyperliquid.fetch({ asset }).catch(() => ({ ok: false })),
+        phantom.defillama.fetch().catch(() => ({ ok: false })),
+        phantom.news.fetch({ asset, includeX: xIncluded }).catch(() => ({ ok: false })),
+        phantom.marketpulse.fetch({ asset }).catch(() => ({ ok: false }))
+      ]);
+
+      const cfg = await phantom.config.get();
+      const uiLang = (typeof getLanguage === 'function') ? getLanguage() : 'es';
+      const langName = (typeof LANG_NAMES !== 'undefined' && LANG_NAMES[uiLang]) || 'Spanish';
+
+      // Build a compressed context: only the parts the playbook cares about.
+      const ctxParts = [];
+      if (typeof formatExchangeDataForPrompt === 'function') {
+        const exCtx = formatExchangeDataForPrompt(exchangeData);
+        if (exCtx) ctxParts.push(exCtx);
+      }
+      if (cgRes && cgRes.ok && cgRes.promptBlock) ctxParts.push(cgRes.promptBlock);
+      if (ofRes && ofRes.ok && ofRes.promptBlock) ctxParts.push(ofRes.promptBlock);
+      if (ttRes && ttRes.ok && ttRes.promptBlock) ctxParts.push(ttRes.promptBlock);
+      if (hlRes && hlRes.ok && hlRes.promptBlock) ctxParts.push(hlRes.promptBlock);
+      if (dlRes && dlRes.ok && dlRes.promptBlock) ctxParts.push(dlRes.promptBlock);
+      if (mpRes && mpRes.ok && mpRes.data && mpRes.data.book) {
+        const b = mpRes.data.book;
+        const wallsTxt = [];
+        wallsTxt.push('MARKET PULSE walls (most-recent live orderbook zones):');
+        for (const w of (b.bid_walls || [])) {
+          wallsTxt.push(`  BID  $${w.zone_start.toFixed(2)}-$${(w.zone_end - 0.01).toFixed(2)}  size=${w.total_size.toFixed(2)}  mult=${w.mult.toFixed(1)}x  dist=${w.dist_pct.toFixed(2)}%`);
+        }
+        for (const w of (b.ask_walls || [])) {
+          wallsTxt.push(`  ASK  $${w.zone_start.toFixed(2)}-$${(w.zone_end - 0.01).toFixed(2)}  size=${w.total_size.toFixed(2)}  mult=${w.mult.toFixed(1)}x  dist=${w.dist_pct.toFixed(2)}%`);
+        }
+        if (mpRes.data.flow) {
+          wallsTxt.push(`  Flow: CVD=${mpRes.data.flow.cvd.toFixed(0)} verdict=${mpRes.data.flow.verdict}`);
+        }
+        ctxParts.push(wallsTxt.join('\n'));
+      }
+      if (newsRes && newsRes.ok && newsRes.data && typeof inlineSummarizeNewsForPrompt === 'function') {
+        const newsBlock = inlineSummarizeNewsForPrompt(newsRes.data);
+        if (newsBlock) ctxParts.push(newsBlock);
+      }
+
+      const system = `You are a senior crypto trader building a TACTICAL PRICE PLAYBOOK for the next 1-4 hours.
+
+ABSOLUTE PRIORITY — RESPOND IN ${langName} (${uiLang}). All text in the response (headers, scenario names, triggers, reasons) must be in ${langName}.
+
+OUTPUT FORMAT — use these EXACT tags so the UI can parse them. Do NOT use markdown headers, free prose between sections, or anything outside the tags except brief intro/outro.
+
+1) CRITICAL LEVELS (4-7 items):
+[LEVEL]
+$<price> | <role: e.g. soporte / resistencia / breakout / breakdown / EMA200 / wall> | <one-line reason>
+[/LEVEL]
+
+2) SCENARIOS (4-6 items, each with EXPLICIT trigger + a machine-checkable CONDITIONS block):
+[SCENARIO name="<short name>" action="LONG|SHORT|WAIT" confidence="★★★★★"]
+TRIGGER: <human description of what needs to happen, in 1 sentence>
+[CONDITIONS]
+- <op>:<value>
+- <op>:<value>
+[/CONDITIONS]
+ENTRY: $X - $Y
+SL: $Z
+TP1: $A
+TP2: $B
+TP3: $C
+SIZE: X% of capital
+REASON: <one sentence — what data supports this>
+[/SCENARIO]
+
+The [CONDITIONS] block is MANDATORY for every NON-WAIT scenario. Each line is one machine-checkable condition. ALL conditions must be true at the same instant for the alert to fire. Use ONLY these operators (anything else is silently ignored):
+
+  price_in:LOW-HIGH        # current mid between LOW and HIGH (use raw numbers, no $)
+  price_above:N            # current mid > N
+  price_below:N            # current mid < N
+  taker_5m_above:N         # last 5m taker buy/sell ratio > N (e.g. 1.20)
+  taker_5m_below:N         # < N (e.g. 0.85)
+  taker_1h_above:N
+  taker_1h_below:N
+  cvd_above:N              # current Cumulative Volume Delta in USD > N
+  cvd_below:N              # use negatives for selling, e.g. cvd_below:-1500000
+  whale_sell_min_usd:N     # at least one whale SELL print in window with notional ≥ $N
+  whale_buy_min_usd:N
+  candle_close_above:N     # most recent COMPLETED 5m candle close > N
+  candle_close_below:N
+  funding_above:N          # current funding > N percent (e.g. 0.05 for 0.05%)
+  funding_below:N
+
+Example — SHORT "rejection at ask wall" scenario:
+[CONDITIONS]
+- price_in:79100-79150
+- taker_5m_below:0.85
+- whale_sell_min_usd:300000
+- candle_close_below:79080
+[/CONDITIONS]
+
+Pick 3-6 conditions per scenario. Be aggressive about SPECIFICITY — vague conditions waste alerts. The conditions MUST match the natural-language TRIGGER above (don't say "whale sells appear" in TRIGGER and omit whale_sell_min_usd in [CONDITIONS]).
+
+3) PROBABLE SEQUENCE — one paragraph (no tags, just text after this block):
+[SEQUENCE]
+1. <most likely first move>
+2. <if that happens, next>
+3. <if not, alternative>
+[/SEQUENCE]
+
+RULES:
+- Every price MUST be in $ (the renderer parses them for coloring).
+- Use EXACT data from the blocks below — never invent numbers.
+- Confidence stars: ★★★★★ = high conviction, ★★★ = neutral, ★ = low.
+- Cover BOTH long AND short scenarios so the trader has a plan in either direction.
+- If a scenario is WAIT, set action="WAIT" and use the entry/SL/TPs fields to describe what conditions you'd need to enter.
+- Be SPECIFIC: "if BTC breaks $79,200 with closing 5m candle above wall and CVD turns positive" not "if it goes up".
+- NO disclaimers, NO indicator name-dropping, NO general explanations. Just the playbook.`;
+
+      const userText = `Asset: ${asset}\n\n` + ctxParts.join('\n\n') + `\n\nBuild the playbook now.`;
+
+      const resp = await phantom.ai.call({
+        messages: [{ role: 'user', content: userText }],
+        system,
+        model: cfg.tradingModel || 'claude-opus-4-7',
+        maxTokens: 4096
+      });
+
+      const raw = (resp && resp.text || '').trim();
+      const parsed = parsePlaybook(raw);
+
+      last = {
+        timestamp: new Date().toISOString(),
+        asset,
+        raw,
+        parsed
+      };
+      saveLast();
+      render();
+      statusEl.textContent = new Date().toLocaleTimeString();
+
+      // Optional: dump to disk for offline review.
+      try { phantom.ai.debugPrompt({ kind: 'playbook', prompt: userText + '\n\n=== RESPONSE ===\n' + raw }).catch(() => {}); } catch (_) {}
+    } catch (e) {
+      console.warn('[playbook] generate failed', e);
+      statusEl.textContent = typeof t === 'function' ? t('playbook.error') : 'error';
+    } finally {
+      busy = false;
+      if (btn) btn.disabled = false;
+      if (headerBtn) headerBtn.disabled = false;
+    }
+  }
+
+  if (btn)       btn.addEventListener('click', generate);
+
+  // The top-right "📋 Plan" button is a VIEW TOGGLE — it shows/hides the
+  // plan panel. The regenerate action lives inside the panel (#pb-generate).
+  // The "Analizar" button always returns to analysis view (hides plan).
+  // This applies in BOTH the main window and the popout — the panel is
+  // hidden by default and only appears when the user explicitly asks for it.
+  if (headerBtn) {
+    headerBtn.addEventListener('click', () => {
+      const showing = panel.classList.toggle('visible');
+      headerBtn.classList.toggle('active', showing);
+      document.body.classList.toggle('show-plan', showing);
+      // Auto-generate the first time the user opens the panel and there's
+      // nothing saved yet — saves them an extra click.
+      if (showing && !last && !busy) generate();
+    });
+  }
+  const analyzeBtn = document.getElementById('btn-trading-analyze');
+  if (analyzeBtn) {
+    analyzeBtn.addEventListener('click', () => {
+      panel.classList.remove('visible');
+      if (headerBtn) headerBtn.classList.remove('active');
+      document.body.classList.remove('show-plan');
+    });
+  }
+
+  loadLast();
+})();
+
+// ════════════════════════════════════════════════════════════════
+// PRICE PLAYBOOK — chart + trigger watcher + email alerts.
+// Reads the playbook stored in localStorage (set by setupPricePlaybook),
+// renders an SVG mini-chart of all levels, and polls the Market Pulse mid
+// every 5s. When the current price enters a scenario's entry range AND
+// alerts are armed, it fires an email + on-screen toast (each scenario
+// fires at most once until the playbook is regenerated).
+// ════════════════════════════════════════════════════════════════
+(function setupPlaybookChartAndAlerts() {
+  const panel = document.getElementById('pb-panel');
+  if (!panel) return;
+  const chartWrap = document.getElementById('pb-chart-wrap');
+  const armedChk  = document.getElementById('pb-armed-master');
+  const emailEl   = document.getElementById('pb-armed-email');
+  const bodyEl    = document.getElementById('pb-body');
+
+  const PLAYBOOK_KEY = 'phantom_playbook_v1';
+  const ALERTS_KEY   = 'phantom_playbook_alerts_v1';
+  const POLL_MS      = 5000;
+  let lastFiredAt    = {};   // scenarioId → ISO timestamp (persisted)
+  let armedState     = false;
+  let savedEmail     = '';
+  let lastPrice      = null;
+  let lastPriceTs    = 0;
+
+  /* ─── Persistence helpers ─── */
+  function loadAlertsState() {
+    try {
+      const raw = localStorage.getItem(ALERTS_KEY);
+      if (raw) {
+        const data = JSON.parse(raw);
+        armedState = !!data.armed;
+        savedEmail = data.email || '';
+        lastFiredAt = data.fired || {};
+      }
+    } catch (_) {}
+    if (armedChk) armedChk.checked = armedState;
+    if (emailEl) emailEl.value = savedEmail;
+  }
+  function saveAlertsState() {
+    try {
+      localStorage.setItem(ALERTS_KEY, JSON.stringify({
+        armed: armedState,
+        email: savedEmail,
+        fired: lastFiredAt
+      }));
+    } catch (_) {}
+  }
+  function loadPlaybook() {
+    try {
+      const raw = localStorage.getItem(PLAYBOOK_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (_) { return null; }
+  }
+
+  /* ─── SVG mini-chart of all levels ─── */
+  function renderChart(playbook, mid) {
+    if (!chartWrap) return;
+    const P = window.PlaybookParser;
+    if (!playbook || !playbook.parsed || !P) {
+      chartWrap.innerHTML = '<div class="pb-chart-empty">Generá un plan para ver los niveles graficados.</div>';
+      return;
+    }
+    // Re-attach numeric ranges (the stored playbook may be raw text-only).
+    const scenarios = (playbook.parsed.scenarios || []).map(P.attachNumericRanges);
+    const levels = P.extractLevelsForChart(scenarios, playbook.parsed.levels || []);
+    if (levels.length === 0) {
+      chartWrap.innerHTML = '<div class="pb-chart-empty">El plan no incluye precios numéricos parseables.</div>';
+      return;
+    }
+
+    // Include mid in the y-range so the price arrow lands on the canvas.
+    const prices = levels.map(l => l.price);
+    if (mid && !isNaN(mid)) prices.push(mid);
+    const min = Math.min.apply(null, prices);
+    const max = Math.max.apply(null, prices);
+    const pad = (max - min) * 0.05 || max * 0.001 || 1;
+    const yMin = min - pad;
+    const yMax = max + pad;
+    const yScale = (p) => 230 - ((p - yMin) / (yMax - yMin)) * 220;
+
+    // Build SVG.
+    const W = 100;     // we use viewBox 0 0 100 240 + label area
+    const lines = levels.map((lv, i) => {
+      const y = yScale(lv.price);
+      const color = lv.kind === 'sl'    ? '#ff4d4d'
+                  : lv.kind === 'tp'    ? '#2effa3'
+                  : lv.kind === 'entry' ? (lv.side === 'short' ? '#ff8080' : '#80ffc0')
+                  :                       '#ffb84a';
+      const dash = lv.kind === 'entry' ? '0' : lv.kind === 'sl' ? '4,3' : lv.kind === 'tp' ? '2,3' : '0';
+      const label = `${lv.role} · $${lv.price.toFixed(lv.price >= 100 ? 0 : 2)}`;
+      return `
+        <line x1="0" y1="${y}" x2="100" y2="${y}" stroke="${color}" stroke-width="0.5" stroke-dasharray="${dash}" opacity="0.7"/>
+        <text x="0.6" y="${y - 1.5}" fill="${color}" font-family="Courier New, Menlo, monospace" font-size="2.6" font-weight="700" letter-spacing="0.06em" opacity="0.95">${escapeHTML(label)}</text>`;
+    }).join('');
+
+    const midLine = (mid && !isNaN(mid))
+      ? `<line x1="0" y1="${yScale(mid)}" x2="100" y2="${yScale(mid)}" stroke="#fff3d6" stroke-width="0.8" opacity="0.95"/>
+         <text x="78" y="${yScale(mid) - 1.5}" fill="#fff3d6" font-family="Courier New, Menlo, monospace" font-size="3" font-weight="700">▶ $${mid.toFixed(mid >= 100 ? 0 : 2)}</text>`
+      : '';
+
+    chartWrap.innerHTML = `
+      <svg viewBox="0 0 100 240" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="100" height="240" fill="#050302"/>
+        <!-- subtle horizontal grid -->
+        ${Array.from({ length: 6 }, (_, i) => `<line x1="0" y1="${10 + i * 44}" x2="100" y2="${10 + i * 44}" stroke="#1a1108" stroke-width="0.2"/>`).join('')}
+        ${lines}
+        ${midLine}
+      </svg>`;
+  }
+
+  /* ─── Toast on-screen notification ─── */
+  function showToast(text, side) {
+    let toast = document.getElementById('pb-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'pb-toast';
+      toast.className = 'pb-toast';
+      document.body.appendChild(toast);
+    }
+    toast.className = 'pb-toast' + (side === 'short' ? ' short' : '');
+    toast.textContent = text;
+    requestAnimationFrame(() => toast.classList.add('show'));
+    setTimeout(() => toast.classList.remove('show'), 7000);
+  }
+
+  /* ─── Send email alert via existing Cloudflare worker ─── */
+  async function sendTriggerAlert(scenario, playbook, mid, evalResult) {
+    if (!savedEmail) return false;
+    const decision = scenario.action === 'LONG' || scenario.action === 'SHORT'
+      ? scenario.action
+      : 'WAIT';
+    const subject = `🎯 TRIGGER · ${scenario.name || 'Plan'} — ${playbook.asset}`;
+    // Build a clear summary that includes the trigger TEXT, the action, the
+    // reason, AND a checklist of which exact conditions passed (with the
+    // observed value at fire-time). That makes the email actionable on its own.
+    const condLines = (evalResult && Array.isArray(evalResult.results))
+      ? evalResult.results.map(r => `  ${r.passed ? '✓' : '✗'} ${r.cond.label || r.cond.op} — obs: ${r.observed}`).join('\n')
+      : '';
+    const summary =
+      `🎯 TODAS las condiciones del trigger se cumplieron @ $${mid.toFixed(2)}.\n\n` +
+      `Trigger: ${scenario.trigger || '—'}\n\n` +
+      `Acción a realizar: ${scenario.action || '—'}\n` +
+      (scenario.reason ? `Razón: ${scenario.reason}\n` : '') +
+      (condLines ? `\nCondiciones verificadas:\n${condLines}\n` : '');
+    const tradeSetup = {
+      entry: scenario.entry,
+      sl: scenario.sl,
+      tp1: scenario.tp1,
+      tp2: scenario.tp2,
+      tp3: scenario.tp3,
+      size: scenario.size
+    };
+    try {
+      const res = await phantom.trading.sendAlert({
+        to: savedEmail,
+        asset: playbook.asset,
+        decision,
+        summary,
+        tradeSetup,
+        timestamp: new Date().toISOString(),
+        kind: 'playbook-trigger',
+        subjectOverride: subject
+      });
+      return !!(res && res.success);
+    } catch (e) {
+      console.warn('[playbook alerts] email send failed', e);
+      return false;
+    }
+  }
+
+  /* ─── Build a stable scenario id (so the same scenario doesn't re-fire) ─── */
+  function scenarioId(playbookTs, scenario) {
+    return playbookTs + '__' + (scenario.name || 'scn') + '__' + (scenario.entry || '?');
+  }
+
+  /**
+   * Build a live market snapshot that the condition evaluator can read.
+   * Pulls from Market Pulse + Order Flow in parallel (both cached server-side).
+   */
+  async function buildSnapshot(asset) {
+    const [mp, of] = await Promise.all([
+      phantom.marketpulse.fetch({ asset }).catch(() => ({ ok: false })),
+      phantom.orderflow.fetch({ asset }).catch(() => ({ ok: false }))
+    ]);
+    const snap = {
+      mid: null, taker_5m: null, taker_1h: null,
+      cvd: null, whales_recent: [],
+      candle_5m_close: null, funding_pct: null
+    };
+    if (mp && mp.ok && mp.data) {
+      const d = mp.data;
+      if (d.book && d.book.mid) snap.mid = d.book.mid;
+      if (d.flow) snap.cvd = d.flow.cvd;
+      if (Array.isArray(d.trades_recent)) {
+        snap.whales_recent = d.trades_recent
+          .filter(t => t.is_whale)
+          .map(t => ({ side: t.side, notional_usd: t.notional, seconds_ago: t.seconds_ago }));
+        // Approximate "last 5m candle close" from the trade tape: the closing
+        // price of trades in the most recent ~5 minutes.
+        const fiveMinAgo = Date.now() / 1000 - 300;
+        const recentEnough = d.trades_recent.filter(t => (Date.now() / 1000 - t.seconds_ago) > fiveMinAgo);
+        if (recentEnough.length) snap.candle_5m_close = recentEnough[0].price;
+        else if (d.trades_recent.length) snap.candle_5m_close = d.trades_recent[0].price;
+      }
+    }
+    if (of && of.ok && of.data) {
+      const o = of.data;
+      if (o.taker5m && typeof o.taker5m.latest_ratio === 'number') snap.taker_5m = o.taker5m.latest_ratio;
+      if (o.taker1h && typeof o.taker1h.latest_ratio === 'number') snap.taker_1h = o.taker1h.latest_ratio;
+    }
+    return snap;
+  }
+
+  /* ─── Main check loop: evaluates ALL conditions per scenario each tick ─── */
+  async function checkTriggers() {
+    const playbook = loadPlaybook();
+    if (!playbook || !playbook.parsed || !window.PlaybookParser) return;
+    const P = window.PlaybookParser;
+    const asset = (typeof tradingAssetInput !== 'undefined' && tradingAssetInput)
+      ? tradingAssetInput.value.trim()
+      : playbook.asset;
+
+    let snapshot;
+    try { snapshot = await buildSnapshot(asset); } catch (_) { return; }
+    if (!snapshot || !snapshot.mid) return;
+    lastPrice = snapshot.mid;
+    lastPriceTs = Date.now();
+    renderChart(playbook, snapshot.mid);
+
+    const scenarios = (playbook.parsed.scenarios || []).map(P.attachNumericRanges);
+
+    // Evaluate every scenario's conditions against the snapshot. Even when
+    // armed = false we still evaluate so the UI can show ✓/✗ live.
+    for (let i = 0; i < scenarios.length; i++) {
+      const s = scenarios[i];
+      // Skip pure WAIT scenarios with no conditions — nothing to fire.
+      if (!Array.isArray(s.conditions) || s.conditions.length === 0) {
+        updateScenarioConditionsUI(i, null);
+        continue;
+      }
+      const result = P.evaluateAllConditions(s.conditions, snapshot);
+      updateScenarioConditionsUI(i, result);
+
+      if (!result.all_passed) continue;
+      if (!armedState) continue;            // would have fired, but alerts disarmed
+      const id = scenarioId(playbook.timestamp, s);
+      if (lastFiredAt[id]) continue;        // already fired for this playbook
+
+      // ALL CONDITIONS MET → fire toast + email
+      lastFiredAt[id] = new Date().toISOString();
+      saveAlertsState();
+      const sideClass = (s.action || '').toLowerCase();
+      showToast(`🎯 ${s.name} · ${s.action} · TODAS las condiciones cumplidas @ $${snapshot.mid.toFixed(2)}`, sideClass);
+      sendTriggerAlert(s, playbook, snapshot.mid, result).then(ok => {
+        if (ok && emailEl && savedEmail) {
+          const statusEl = document.getElementById('pb-status');
+          if (statusEl) statusEl.textContent = '📧 ' + new Date().toLocaleTimeString();
+        }
+      });
+      renderFiredBadges();
+    }
+  }
+
+  /* ─── Live ✓/✗ per condition inside the scenario card ─── */
+  function updateScenarioConditionsUI(scenarioIdx, result) {
+    const cards = bodyEl ? bodyEl.querySelectorAll('.pb-scenario') : [];
+    const card = cards[scenarioIdx];
+    if (!card) return;
+    let host = card.querySelector('.pb-conditions');
+    if (!host) {
+      host = document.createElement('div');
+      host.className = 'pb-conditions';
+      // Insert right after the trigger element.
+      const trigger = card.querySelector('.pb-scen-trigger');
+      if (trigger && trigger.parentNode) trigger.parentNode.insertBefore(host, trigger.nextSibling);
+      else card.appendChild(host);
+    }
+    if (!result || !result.results || result.results.length === 0) {
+      host.innerHTML = '';
+      return;
+    }
+    const headerCls = result.all_passed ? 'pb-cond-header pass' : 'pb-cond-header';
+    const headerTxt = result.all_passed
+      ? '✅ TODAS las condiciones cumplidas — alerta lista'
+      : `📋 Checklist (${result.results.filter(r => r.passed).length}/${result.results.length})`;
+    let html = '<div class="' + headerCls + '">' + headerTxt + '</div><ul class="pb-cond-list">';
+    for (const r of result.results) {
+      const icon = r.passed ? '<span class="pb-cond-icon pass">✓</span>' : '<span class="pb-cond-icon">✗</span>';
+      html += '<li class="pb-cond-item' + (r.passed ? ' pass' : '') + '">'
+            + icon
+            + '<span class="pb-cond-label">' + escapeHTML(r.cond.label || r.cond.op) + '</span>'
+            + '<span class="pb-cond-observed">obs: ' + escapeHTML(String(r.observed)) + '</span>'
+            + '</li>';
+    }
+    html += '</ul>';
+    host.innerHTML = html;
+  }
+
+  /* ─── Decorate scenario cards with armed / fired badges ─── */
+  function renderFiredBadges() {
+    if (!bodyEl) return;
+    const playbook = loadPlaybook();
+    if (!playbook) return;
+    const cards = bodyEl.querySelectorAll('.pb-scenario');
+    if (!cards.length) return;
+    const scenarios = playbook.parsed.scenarios || [];
+    cards.forEach((card, i) => {
+      const s = scenarios[i];
+      if (!s) return;
+      const id = scenarioId(playbook.timestamp, s);
+      const fired = !!lastFiredAt[id];
+      let badge = card.querySelector('.pb-scen-badge');
+      if (!badge) {
+        const title = card.querySelector('.pb-scen-title');
+        if (title) {
+          badge = document.createElement('span');
+          badge.className = 'pb-scen-badge';
+          title.appendChild(badge);
+        }
+      }
+      if (badge) {
+        if (fired) {
+          badge.className = 'pb-scen-badge fired';
+          badge.textContent = '✅ disparado';
+        } else if (armedState) {
+          badge.className = 'pb-scen-badge armed';
+          badge.textContent = '🔔 armado';
+        } else {
+          badge.className = 'pb-scen-badge';
+          badge.textContent = '';
+        }
+      }
+    });
+  }
+
+  /* ─── Wire events ─── */
+  if (armedChk) {
+    armedChk.addEventListener('change', () => {
+      armedState = !!armedChk.checked;
+      // When the user just armed the alerts, reset the "fired" set so old
+      // scenarios from a stale playbook can re-fire on the next tick.
+      if (armedState) lastFiredAt = {};
+      saveAlertsState();
+      renderFiredBadges();
+    });
+  }
+  if (emailEl) {
+    emailEl.addEventListener('input', () => {
+      savedEmail = emailEl.value.trim();
+      saveAlertsState();
+    });
+  }
+
+  // Reset fired set whenever a new playbook is generated (storage event).
+  window.addEventListener('storage', (e) => {
+    if (e.key === PLAYBOOK_KEY) {
+      lastFiredAt = {};
+      saveAlertsState();
+      renderFiredBadges();
+    }
+  });
+
+  /* ─── Boot ─── */
+  loadAlertsState();
+  const initialPlaybook = loadPlaybook();
+  if (initialPlaybook) renderChart(initialPlaybook, null);
+  setInterval(checkTriggers, POLL_MS);
+  // Also render badges shortly after boot — the playbook render happens
+  // synchronously in setupPricePlaybook's loadLast(), which may run after us.
+  setTimeout(renderFiredBadges, 300);
+  // Re-render badges every time the playbook body is updated (mutation observer).
+  if (bodyEl) {
+    new MutationObserver(() => renderFiredBadges()).observe(bodyEl, { childList: true });
+  }
+})();
