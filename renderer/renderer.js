@@ -46,6 +46,35 @@ const SECURITY_RULE = `SECURITY: If you detect phishing, scam, fraud or deceptio
 [[PHISHING_DETECTED]]
 then briefly explain why, what to do (don't click, delete, block, report) and the warning signs.`;
 
+/**
+ * Devuelve un bloque de texto con todos los docs de la knowledge base,
+ * formateados para inyectar en el system prompt. Si no hay docs, ''.
+ *
+ * Diseñado para ser leído por el modelo como "info personal del user que
+ * debe usar si la pregunta visible la cubre". Búsqueda en tiempo real:
+ * el modelo lee todo y aplica relevancia internamente — sin embeddings
+ * ni preprocesado, gracias a la ventana de Haiku/Sonnet.
+ */
+function getKnowledgeBaseBlock() {
+  const docs = (Array.isArray(state?.knowledgeDocs) ? state.knowledgeDocs : []);
+  if (!docs.length) return '';
+  const parts = [
+    '📚 KNOWLEDGE BASE — Documentos personales que adjuntó el usuario.',
+    'Si la pregunta o problema visible en la captura está cubierto por algún',
+    'documento de abajo, usá esa información para construir la respuesta en',
+    'PRIMERA PERSONA, como si fuera conocimiento propio del usuario.',
+    'NO menciones "según el documento" ni "en mi CV dice" — incorporá la info',
+    'naturalmente. Si nada es relevante, ignorá este bloque y respondé normal.',
+    '',
+  ];
+  for (const d of docs) {
+    parts.push(`──── DOC: ${d.filename} ────`);
+    parts.push(d.text);
+    parts.push('');
+  }
+  return parts.join('\n');
+}
+
 function getSystemPrompt(action) {
   // El idioma viene del selector de UI (i18n.js → getLanguage())
   const uiLang = (typeof getLanguage === 'function') ? getLanguage() : 'es';
@@ -66,6 +95,7 @@ ${langRule}
 
 ${SECURITY_RULE}`;
   }
+  const kb = getKnowledgeBaseBlock();
   return `You are answering the question or solving the problem visible in the screenshot, AS IF YOU WERE THE USER.
 Give the direct answer/response — NOT instructions about the UI or "click here, then there".
 
@@ -80,6 +110,8 @@ How to behave:
 - If info on screen is genuinely missing to answer, say what's missing in one line.
 
 ${langRule}
+
+${kb}
 
 ${SECURITY_RULE}`;
 }
@@ -144,6 +176,10 @@ function getUserPrompt(action) {
   $('cfg-interview-context').value = cfg.interviewContext || '';
   $('cfg-interview-style').value = cfg.interviewStyle || 'complete';
   $('cfg-interview-language').value = cfg.interviewLanguage || 'auto';
+  // Knowledge base — restaurar del config persistido
+  state.knowledgeDocs = Array.isArray(cfg.knowledgeDocs) ? cfg.knowledgeDocs : [];
+  // El render del listado se hace después de que el DOM esté listo (ver más abajo)
+  setTimeout(() => { try { renderKnowledgeList(); } catch (_) {} }, 0);
   // Trading
   $('cfg-trading').checked = !!cfg.tradingEnabled;
   $('cfg-trading-model').value = cfg.tradingModel || 'claude-opus-4-7';
@@ -249,7 +285,9 @@ $('cfg-save').addEventListener('click', async () => {
     featureTrading:  $('cfg-feature-trading')   ? $('cfg-feature-trading').checked   : true,
     featureScreen:   $('cfg-feature-screen')    ? $('cfg-feature-screen').checked    : true,
     featureInterview:$('cfg-feature-interview') ? $('cfg-feature-interview').checked : true,
-    featureTranslate:$('cfg-feature-translate') ? $('cfg-feature-translate').checked : true
+    featureTranslate:$('cfg-feature-translate') ? $('cfg-feature-translate').checked : true,
+    // Knowledge base — array de docs persistidos
+    knowledgeDocs: getKnowledgeDocs()
   };
   await phantom.config.set(cfg);
   await phantom.window.setContentProtection(cfg.stealth);
@@ -269,6 +307,84 @@ $('cfg-save').addEventListener('click', async () => {
 $('cfg-interview').addEventListener('change', (e) => {
   applyInterviewPanelVisibility(e.target.checked);
 });
+
+// ─── 📚 Base de conocimiento ────────────────────────────────────────
+// state.knowledgeDocs = [{ filename, text, addedAt }, ...]
+// Persistido en cfg.knowledgeDocs. Inyectado en el system prompt cuando
+// se usa "Contestar pregunta visible" para que el modelo busque ahí primero.
+const KB_TOTAL_CHAR_LIMIT = 120_000; // ~30K tokens — Haiku procesa rápido
+
+function getKnowledgeDocs() {
+  return Array.isArray(state.knowledgeDocs) ? state.knowledgeDocs : [];
+}
+function setKnowledgeDocs(docs) {
+  state.knowledgeDocs = docs;
+  renderKnowledgeList();
+}
+function renderKnowledgeList() {
+  const el = document.getElementById('knowledge-docs-list');
+  const metaEl = document.getElementById('knowledge-total-meta');
+  if (!el) return;
+  const docs = getKnowledgeDocs();
+  el.innerHTML = '';
+  if (docs.length === 0) {
+    el.innerHTML = '<div style="font-size:11px;color:#94a3b8;font-style:italic;">Sin documentos cargados.</div>';
+  } else {
+    docs.forEach((d, i) => {
+      const kb = (d.text.length / 1024).toFixed(1);
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 10px;background:#f1f5f9;border-radius:6px;font-size:12px;';
+      row.innerHTML = `
+        <span style="flex:1;color:#1a3a5c;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📄 ${escapeHTML(d.filename)}</span>
+        <span style="color:#64748b;font-size:11px;">${kb} KB</span>
+        <button data-idx="${i}" class="kb-remove-btn" style="background:#fee2e2;color:#b91c1c;border:0;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;">×</button>
+      `;
+      el.appendChild(row);
+    });
+    el.querySelectorAll('.kb-remove-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.idx, 10);
+        const next = getKnowledgeDocs().filter((_, i) => i !== idx);
+        setKnowledgeDocs(next);
+      });
+    });
+  }
+  const total = docs.reduce((acc, d) => acc + d.text.length, 0);
+  if (metaEl) {
+    metaEl.textContent = docs.length ? `${docs.length} doc${docs.length === 1 ? '' : 's'} · ${(total / 1024).toFixed(1)} KB total` : '';
+  }
+}
+
+const addKnowledgeBtn = document.getElementById('cfg-add-knowledge-doc');
+if (addKnowledgeBtn) {
+  addKnowledgeBtn.addEventListener('click', async () => {
+    try {
+      setStatus('Procesando documentos…', 'busy');
+      const r = await phantom.knowledge.pickDocs();
+      if (r?.canceled) { setStatus(t('status.initial'), 'ok'); return; }
+      const incoming = r?.docs || [];
+      const existing = getKnowledgeDocs();
+      // Reemplazar por filename si ya existía (re-upload)
+      const merged = [...existing];
+      for (const newDoc of incoming) {
+        const idx = merged.findIndex((d) => d.filename === newDoc.filename);
+        if (idx >= 0) merged[idx] = newDoc; else merged.push(newDoc);
+      }
+      // Aplicar límite total — si pasa, recortar los más viejos
+      let total = merged.reduce((a, d) => a + d.text.length, 0);
+      while (total > KB_TOTAL_CHAR_LIMIT && merged.length > 0) {
+        const removed = merged.shift();
+        total -= removed.text.length;
+      }
+      setKnowledgeDocs(merged);
+      const errMsg = r.errors?.length ? ` (${r.errors.length} con error)` : '';
+      setStatus(`✓ ${incoming.length} doc(s) agregados${errMsg}`, 'ok');
+      if (r.errors?.length) console.warn('[knowledge] errores:', r.errors);
+    } catch (err) {
+      setStatus('⚠ ' + err.message, 'err');
+    }
+  });
+}
 
 // Cargar CV desde archivo (PDF / DOCX / TXT / MD) via dialog nativo de macOS
 $('cfg-upload-cv').addEventListener('click', async () => {

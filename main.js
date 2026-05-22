@@ -18,6 +18,23 @@ const { execFile } = require('child_process');
 const WebSocket = require('ws');
 const crypto = require('crypto');
 
+const { initLogger, createLogger } = require('./lib/logger');
+const tradeStore = require('./lib/trade-store');
+const newsFetcher = require('./lib/news-fetcher');
+const xScraper = require('./lib/x-scraper');
+const coinglass = require('./lib/coinglass-scraper');
+const orderflow = require('./lib/orderflow');
+const hyperliquid = require('./lib/hyperliquid');
+const defillama = require('./lib/defillama');
+const tradeTape = require('./lib/trade-tape');
+const marketPulse = require('./lib/market-pulse');
+const liquidationStream = require('./lib/liquidation-stream');
+const scalpRadar = require('./lib/scalp-radar');
+
+initLogger(app.getPath('userData'));
+tradeStore.initStore(app.getPath('userData'));
+const mainLog = createLogger('main');
+
 // ─── Persistencia de configuración (JSON simple) ────────────────
 const CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
 
@@ -42,7 +59,12 @@ function loadConfig() {
       interviewCV: '',         // texto del CV / experiencia
       interviewContext: '',    // info extra: empresa, puesto, carta de presentación, etc
       interviewStyle: 'complete', // concise | detailed | complete (default = respuesta completa)
-      interviewLanguage: 'auto'   // idioma en que responder (auto = mismo que la pregunta)
+      interviewLanguage: 'auto',  // idioma en que responder (auto = mismo que la pregunta)
+      // ── Feature visibility toggles (independent of enabled state) ──
+      featureTrading:   true,
+      featureScreen:    true,
+      featureInterview: true,
+      featureTranslate: true
     };
   }
 }
@@ -168,6 +190,45 @@ ipcMain.handle('window:show', () => { if (mainWindow) mainWindow.show(); });
 ipcMain.handle('window:close', () => { if (mainWindow) mainWindow.close(); });
 ipcMain.handle('window:minimize', () => { if (mainWindow) mainWindow.minimize(); });
 
+// Separate Trading window — loads the same renderer but with ?view=trading
+// so the renderer hides chat/interview/settings panels and shows only the
+// trading section + live market pulse widget.
+let tradingWindow = null;
+ipcMain.handle('window:open-trading', () => {
+  if (tradingWindow && !tradingWindow.isDestroyed()) {
+    tradingWindow.show();
+    tradingWindow.focus();
+    return { ok: true, focused: true };
+  }
+  // Open the Trading window as a tall, narrow panel that fills the screen
+  // vertically — like a real dashboard. Width 720 + height = workArea - 60.
+  const { workArea } = screen.getPrimaryDisplay();
+  const winHeight = Math.max(700, workArea.height - 60);
+  const winWidth  = Math.min(720, workArea.width - 60);
+  tradingWindow = new BrowserWindow({
+    width: winWidth,
+    height: winHeight,
+    x: workArea.x + 40,
+    y: workArea.y + 20,
+    minWidth: 520,
+    minHeight: 600,
+    title: 'Phantom — Trading',
+    show: true,
+    backgroundColor: '#0a0604',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true
+    }
+  });
+  tradingWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'), {
+    query: { view: 'trading' }
+  });
+  tradingWindow.on('closed', () => { tradingWindow = null; });
+  return { ok: true, opened: true };
+});
+
 ipcMain.handle('window:set-content-protection', (_e, on) => {
   if (mainWindow) mainWindow.setContentProtection(!!on);
 });
@@ -186,15 +247,18 @@ ipcMain.handle('window:set-opacity', (_e, value) => {
 
 // Cambiar el tamaño de la ventana on-the-fly (para el modo traducción)
 ipcMain.handle('window:resize', (_e, { width, height }) => {
-  if (!mainWindow) return;
+  // Resize the window that sent the request (could be main or the popped-out
+  // Trading window), not always mainWindow.
+  const win = BrowserWindow.fromWebContents(_e.sender) || mainWindow;
+  if (!win) return;
   const { workArea } = screen.getPrimaryDisplay();
   const w = Math.min(width || 420, workArea.width - 40);
   const h = Math.min(height || 600, workArea.height - 40);
-  const [curX] = mainWindow.getPosition();
+  const [curX] = win.getPosition();
   const newX = Math.min(curX, workArea.x + workArea.width - w - 20);
-  mainWindow.setBounds({
+  win.setBounds({
     x: Math.max(workArea.x + 20, newX),
-    y: mainWindow.getPosition()[1],
+    y: win.getPosition()[1],
     width: w,
     height: h
   }, true);
@@ -645,6 +709,30 @@ async function fetchKuCoin(cfg, type) {
         results.balanceSource = 'spot';
       }
     }
+
+    // Funding rate (public, no auth)
+    if (type === 'all' || type === 'fundingRate') {
+      if (symbol) {
+        try {
+          const fr = await httpsJSON('api-futures.kucoin.com', `/api/v1/funding-rate/${symbol}M/current`);
+          results.fundingRate = fr.data;
+        } catch (e) {
+          results.fundingRate = { error: e.message };
+        }
+      }
+    }
+
+    // Open interest (public, no auth)
+    if (type === 'all' || type === 'openInterest') {
+      if (symbol) {
+        try {
+          const oi = await httpsJSON('api-futures.kucoin.com', `/api/v1/contracts/${symbol}M`);
+          results.openInterest = oi.data;
+        } catch (e) {
+          results.openInterest = { error: e.message };
+        }
+      }
+    }
   } catch (err) {
     results.error = err.message;
   }
@@ -698,12 +786,463 @@ async function fetchBinance(cfg, type) {
       const bal = await httpsJSON('fapi.binance.com', path, { 'X-MBX-APIKEY': cfg.exchangeKey });
       results.balance = (bal || []).filter(b => parseFloat(b.balance) > 0);
     }
+
+    // Funding rate (public, no auth needed)
+    if (type === 'all' || type === 'fundingRate') {
+      if (symbol) {
+        try {
+          const fr = await httpsJSON('fapi.binance.com', `/fapi/v1/fundingRate?symbol=${symbol}&limit=1`);
+          results.fundingRate = Array.isArray(fr) && fr.length > 0 ? fr[0] : fr;
+        } catch (e) {
+          results.fundingRate = { error: e.message };
+        }
+      }
+    }
+
+    // Open interest (public, no auth needed)
+    if (type === 'all' || type === 'openInterest') {
+      if (symbol) {
+        try {
+          const oi = await httpsJSON('fapi.binance.com', `/fapi/v1/openInterest?symbol=${symbol}`);
+          results.openInterest = oi;
+        } catch (e) {
+          results.openInterest = { error: e.message };
+        }
+      }
+    }
+
+    // Long/Short ratio (public)
+    if (type === 'all' || type === 'longShortRatio') {
+      if (symbol) {
+        try {
+          const lsr = await httpsJSON('fapi.binance.com', `/futures/data/globalLongShortAccountRatio?symbol=${symbol}&period=1h&limit=1`);
+          results.longShortRatio = Array.isArray(lsr) && lsr.length > 0 ? lsr[0] : lsr;
+        } catch (e) {
+          results.longShortRatio = { error: e.message };
+        }
+      }
+    }
   } catch (err) {
     results.error = err.message;
   }
 
   return results;
 }
+
+// ─── PUBLIC MARKET DATA (no API keys needed) ─────────────────────
+ipcMain.handle('market:publicData', async (_e, { asset }) => {
+  const results = {};
+  const symbol = (asset || '').replace('/', '').toUpperCase(); // BTC/USDT → BTCUSDT
+  const base = (asset || '').split('/')[0]?.toLowerCase(); // BTC/USDT → btc
+
+  // Fear & Greed Index (alternative.me — free, no key)
+  try {
+    const fg = await httpsJSON('api.alternative.me', '/fng/?limit=1');
+    if (fg && fg.data && fg.data[0]) {
+      results.fearGreed = {
+        value: fg.data[0].value,
+        label: fg.data[0].value_classification,
+        timestamp: fg.data[0].timestamp
+      };
+    }
+  } catch (e) {
+    results.fearGreed = { error: e.message };
+  }
+
+  // Top gainers/losers from Binance (market sentiment proxy)
+  try {
+    const tickers = await httpsJSON('fapi.binance.com', '/fapi/v1/ticker/24hr');
+    if (Array.isArray(tickers)) {
+      const sorted = tickers
+        .filter(t => t.symbol.endsWith('USDT'))
+        .sort((a, b) => parseFloat(b.priceChangePercent) - parseFloat(a.priceChangePercent));
+      results.topGainers = sorted.slice(0, 3).map(t => ({ symbol: t.symbol, change: t.priceChangePercent + '%' }));
+      results.topLosers = sorted.slice(-3).reverse().map(t => ({ symbol: t.symbol, change: t.priceChangePercent + '%' }));
+
+      // Find our asset's 24h stats
+      if (symbol) {
+        const ourTicker = tickers.find(t => t.symbol === symbol);
+        if (ourTicker) {
+          results.ticker24h = {
+            priceChange: ourTicker.priceChange,
+            priceChangePercent: ourTicker.priceChangePercent + '%',
+            high: ourTicker.highPrice,
+            low: ourTicker.lowPrice,
+            volume: ourTicker.volume,
+            quoteVolume: ourTicker.quoteVolume
+          };
+        }
+      }
+    }
+  } catch (e) {
+    results.marketOverview = { error: e.message };
+  }
+
+  // Liquidation data — Binance futures top trader positions
+  if (symbol) {
+    try {
+      const topLong = await httpsJSON('fapi.binance.com', `/futures/data/topLongShortPositionRatio?symbol=${symbol}&period=1h&limit=1`);
+      results.topTraderPositions = Array.isArray(topLong) && topLong.length > 0 ? topLong[0] : null;
+    } catch (e) {
+      results.topTraderPositions = { error: e.message };
+    }
+  }
+
+  // CoinGecko trending (free, no key)
+  try {
+    const trending = await httpsJSON('api.coingecko.com', '/api/v3/search/trending');
+    if (trending && trending.coins) {
+      results.trending = trending.coins.slice(0, 5).map(c => ({
+        name: c.item.name,
+        symbol: c.item.symbol,
+        rank: c.item.market_cap_rank
+      }));
+    }
+  } catch (e) {
+    results.trending = { error: e.message };
+  }
+
+  return results;
+});
+
+// ─── EMBEDDED TRADINGVIEW CHARTS (hidden windows) ────────────────
+const chartWindows = {};
+
+function createChartWindow(symbol, interval, indicators) {
+  const indKey = (indicators || []).join(',');
+  const key = `${symbol}_${interval}_${indKey}`;
+  if (chartWindows[key] && !chartWindows[key].isDestroyed()) {
+    return chartWindows[key];
+  }
+
+  const chartPath = path.join(__dirname, 'renderer', 'chart.html');
+  const win = new BrowserWindow({
+    width: 1280,
+    height: 720,
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true
+    }
+  });
+
+  const tvSymbol = symbol.includes(':') ? symbol : `BINANCE:${symbol.replace('/', '').toUpperCase()}`;
+  const query = { symbol: tvSymbol, interval };
+  if (indKey) query.indicators = indKey;
+  win.loadFile(chartPath, { query });
+
+  chartWindows[key] = win;
+  return win;
+}
+
+ipcMain.handle('trading:captureCharts', async (_e, { asset, timeframes, indicators }) => {
+  const symbol = asset || 'BTC/USDT';
+  const tfs = timeframes || ['60', '240'];
+  const inds = Array.isArray(indicators) ? indicators : [];
+  const results = { _renderedIndicators: [] };
+
+  for (const tf of tfs) {
+    const win = createChartWindow(symbol, tf, inds);
+    const ready = await win.webContents.executeJavaScript('window._chartReady').catch(() => false);
+    if (!ready) {
+      await new Promise(r => setTimeout(r, 10000));
+    }
+    const rendered = await win.webContents.executeJavaScript('window._renderedIndicators || []').catch(() => []);
+    if (rendered.length && results._renderedIndicators.length === 0) {
+      results._renderedIndicators = rendered;
+    }
+    const img = await win.webContents.capturePage();
+    results[tf] = img.toDataURL();
+  }
+
+  return results;
+});
+
+ipcMain.handle('trading:updateChartSymbol', async (_e, { asset }) => {
+  const tvSymbol = asset.includes(':') ? asset : `BINANCE:${asset.replace('/', '').toUpperCase()}`;
+  // Destroy old windows and recreate with new symbol
+  for (const key of Object.keys(chartWindows)) {
+    if (!chartWindows[key].isDestroyed()) chartWindows[key].close();
+    delete chartWindows[key];
+  }
+  // Pre-create for 1H and 4H
+  createChartWindow(tvSymbol, '60');
+  createChartWindow(tvSymbol, '240');
+  return { success: true };
+});
+
+// ─── X (Twitter) SCRAPER — personal use, persisted session ───────
+ipcMain.handle('x:check-auth', async () => {
+  try {
+    const authed = await xScraper.checkAuth();
+    return { ok: true, authenticated: authed };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('x:login', async () => {
+  try {
+    const res = await xScraper.startLogin();
+    return { ok: true, authenticated: res.authenticated };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('x:logout', async () => {
+  try {
+    await xScraper.logout();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('orderflow:fetch', async (_e, { asset }) => {
+  try {
+    const data = await orderflow.fetchOrderFlow(asset);
+    const block = orderflow.formatForPrompt(data);
+    return { ok: true, data, promptBlock: block };
+  } catch (e) {
+    mainLog.error('orderflow:fetch failed', e);
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('hyperliquid:fetch', async (_e, { asset }) => {
+  try {
+    const data = await hyperliquid.fetchHyperliquid(asset);
+    const block = hyperliquid.formatForPrompt(data);
+    return { ok: true, data, promptBlock: block };
+  } catch (e) {
+    mainLog.error('hyperliquid:fetch failed', e);
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('defillama:fetch', async () => {
+  try {
+    const data = await defillama.fetchStablecoinFlows();
+    const block = defillama.formatForPrompt(data);
+    return { ok: true, data, promptBlock: block };
+  } catch (e) {
+    mainLog.error('defillama:fetch failed', e);
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('marketpulse:fetch', async (_e, { asset }) => {
+  try {
+    return { ok: true, data: await marketPulse.fetchMarketPulse(asset) };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// Scalp Radar — keeps the previous snapshot in a module-level cache so CVD/spread
+// velocity can be computed without forcing the renderer to manage state.
+const _radarPrev = new Map(); // symbol → previous snapshot
+ipcMain.handle('scalpradar:fetch', async (_e, { asset }) => {
+  try {
+    const curr = await marketPulse.fetchMarketPulse(asset);
+    const symbol = marketPulse.toBinanceSymbol(asset);
+    const prev = _radarPrev.get(symbol) || null;
+    _radarPrev.set(symbol, curr);
+    const refPrice = curr && curr.book ? curr.book.mid : null;
+    const liqSummary  = liquidationStream.summarize(symbol, 5 * 60 * 1000);
+    const liqClusters = liquidationStream.clusterRecent(symbol, { windowMs: 5 * 60 * 1000, refPrice });
+    const radar = scalpRadar.computeRadar({ prev, curr, liqSummary, liqClusters });
+    return { ok: true, data: radar };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('tradetape:fetch', async (_e, { asset }) => {
+  try {
+    const data = await tradeTape.fetchTradeTape(asset);
+    const block = tradeTape.formatForPrompt(data);
+    return { ok: true, data, promptBlock: block };
+  } catch (e) {
+    mainLog.error('tradetape:fetch failed', e);
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('coinglass:fetch', async (_e, { symbol }) => {
+  try {
+    const data = await coinglass.fetchCoinglass(symbol);
+    const block = coinglass.formatForPrompt(data, (symbol || 'BTC').toUpperCase());
+    return { ok: true, data, promptBlock: block };
+  } catch (e) {
+    mainLog.error('coinglass:fetch failed', e);
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('x:fetch-tweets', async (_e, { query, count }) => {
+  try {
+    const tweets = await xScraper.fetchTweets({ query, count: count || 15 });
+    return { ok: true, tweets, asNews: xScraper.asNewsItems(tweets) };
+  } catch (e) {
+    mainLog.error('x:fetch-tweets failed', e);
+    return { ok: false, error: e.message };
+  }
+});
+
+// ─── NEWS AGGREGATOR (Google + Reddit + CryptoPanic + CoinMarketCal) ─
+const _newsCache = new Map(); // asset -> { ts, data }
+const NEWS_CACHE_MS = 10 * 60 * 1000;
+
+ipcMain.handle('news:fetch', async (_e, { asset, force, includeX }) => {
+  try {
+    const cacheKey = (asset || 'BTC').toUpperCase() + (includeX ? ':x' : '');
+    const cached = _newsCache.get(cacheKey);
+    if (!force && cached && (Date.now() - cached.ts) < NEWS_CACHE_MS) {
+      return { ok: true, data: cached.data, cached: true };
+    }
+    const data = await newsFetcher.fetchNews(asset);
+    mainLog.info('news fetched', {
+      asset: data.asset,
+      recent: data.recent ? data.recent.length : 0,
+      upcoming: data.upcoming ? data.upcoming.length : 0,
+      sources: data.sources,
+      errors: data.errors
+    });
+
+    // Optional X integration: requires the user to have logged in once.
+    if (includeX) {
+      try {
+        const authed = await xScraper.checkAuth();
+        if (authed) {
+          const { symbol, names } = newsFetcher.resolveSymbol(asset);
+          const q = `(${names.slice(0, 2).join(' OR ')}) (price OR pump OR dump OR breakout) -filter:replies`;
+          // Two queries in parallel: generic price tweets + curated smart-money accounts.
+          const [tweets, smartTweets] = await Promise.all([
+            xScraper.fetchTweets({ query: q, count: 8 }).catch(() => []),
+            xScraper.fetchSmartMoneyTweets({ asset: symbol, count: 10 }).catch(() => [])
+          ]);
+          const asNews = [
+            ...xScraper.smartMoneyAsNewsItems(smartTweets),  // smart money first (higher signal)
+            ...xScraper.asNewsItems(tweets)
+          ];
+          if (asNews.length) {
+            const seen = new Set(data.recent.map(r => (r.title || '').toLowerCase().slice(0, 60)));
+            for (const t of asNews) {
+              const key = (t.title || '').toLowerCase().slice(0, 60);
+              if (key && !seen.has(key)) {
+                seen.add(key);
+                data.recent.unshift({ ...t, hoursAgo: t.published_at ? Math.round((Date.now() - Date.parse(t.published_at)) / 36e5) : null });
+              }
+            }
+            data.recent = data.recent.slice(0, 15);
+            data.sources = { ...(data.sources || {}), x: asNews.length };
+          } else {
+            data.sources = { ...(data.sources || {}), x: 0 };
+          }
+          mainLog.info('X tweets added to news', { count: asNews.length, query: q });
+        } else {
+          data.sources = { ...(data.sources || {}), x: 0, x_unauthenticated: true };
+          mainLog.warn('X not authenticated — skipping tweet fetch');
+        }
+      } catch (e) {
+        mainLog.warn('X fetch failed inside news pipeline', { error: e.message });
+        data.sources = { ...(data.sources || {}), x_error: e.message.slice(0, 200) };
+      }
+    }
+
+    _newsCache.set(cacheKey, { ts: Date.now(), data });
+    return { ok: true, data, cached: false };
+  } catch (e) {
+    mainLog.error('news:fetch failed', e);
+    return { ok: false, error: e.message };
+  }
+});
+
+// ─── TRADE LOGGING (local dataset for win-rate analytics) ────────
+ipcMain.handle('trade:log', async (_e, payload) => {
+  try {
+    const rec = tradeStore.logAnalysis(payload || {});
+    return { ok: true, id: rec.id };
+  } catch (e) {
+    mainLog.error('trade:log failed', e);
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('trade:update', async (_e, { id, patch }) => {
+  try {
+    const rec = tradeStore.updateTrade(id, patch || {});
+    if (!rec) return { ok: false, error: 'not_found' };
+    return { ok: true, trade: rec };
+  } catch (e) {
+    mainLog.error('trade:update failed', e);
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('trade:list', async (_e, filter) => {
+  try {
+    return { ok: true, trades: tradeStore.listTrades(filter || {}) };
+  } catch (e) {
+    mainLog.error('trade:list failed', e);
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('trade:get', async (_e, id) => {
+  try {
+    return { ok: true, trade: tradeStore.getTrade(id) };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('trade:recent', async (_e, { asset, sinceMs, limit }) => {
+  try {
+    return { ok: true, trades: tradeStore.getRecentForAsset(asset, { sinceMs, limit }) };
+  } catch (e) {
+    mainLog.error('trade:recent failed', e);
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('trade:stats', async (_e, filter) => {
+  try {
+    return { ok: true, stats: tradeStore.computeStats(filter || {}) };
+  } catch (e) {
+    mainLog.error('trade:stats failed', e);
+    return { ok: false, error: e.message };
+  }
+});
+
+// ─── TRADING ALERT EMAIL ─────────────────────────────────────────
+ipcMain.handle('trading:sendAlert', async (_e, payload) => {
+  const WORKER_URL = 'https://phantom-download.ivankolariki1990.workers.dev';
+  const res = await new Promise((resolve, reject) => {
+    const data = JSON.stringify(payload);
+    const url = new URL(WORKER_URL + '/send-alert');
+    const req = https.request({
+      hostname: url.hostname,
+      path: url.pathname,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }
+    }, (res) => {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => {
+        try { resolve(JSON.parse(Buffer.concat(chunks).toString())); }
+        catch { resolve({ error: 'Parse error' }); }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(15000, () => { req.destroy(); reject(new Error('Timeout')); });
+    req.write(data);
+    req.end();
+  });
+  return res;
+});
 
 // ─── INTERVIEW MODE: contestar como el usuario ──────────────────
 // Recibe la pregunta detectada y devuelve la respuesta como si fuera el usuario,
@@ -794,6 +1333,69 @@ ipcMain.handle('file:read-text', async (_e, filePath) => {
 });
 
 // Picker NATIVO de macOS + extracción de texto (PDF / DOCX / TXT / MD)
+// Reusable: extrae texto plano de un archivo (PDF / DOCX / TXT / MD).
+async function extractTextFromFile(filePath) {
+  const filename = path.basename(filePath);
+  const ext = path.extname(filePath).toLowerCase();
+  const buf = fs.readFileSync(filePath);
+
+  if (buf.length > 10 * 1024 * 1024) {
+    throw new Error('Archivo demasiado grande (>10 MB)');
+  }
+  if (ext === '.txt' || ext === '.md') {
+    return { filename, text: buf.toString('utf8') };
+  }
+  if (ext === '.pdf') {
+    const pdfParse = require('pdf-parse');
+    const data = await pdfParse(buf);
+    return { filename, text: (data.text || '').trim() };
+  }
+  if (ext === '.docx') {
+    const mammoth = require('mammoth');
+    const data = await mammoth.extractRawText({ buffer: buf });
+    return { filename, text: (data.value || '').trim() };
+  }
+  if (ext === '.doc') {
+    throw new Error('El formato .doc legacy no es soportado. Guardá como .docx y reintentá.');
+  }
+  throw new Error('Tipo de archivo no soportado: ' + ext);
+}
+
+/**
+ * Picker genérico para múltiples documentos (knowledge base). El usuario
+ * elige UNO o VARIOS archivos. Devolvemos un array de { filename, text }.
+ */
+ipcMain.handle('file:pick-and-extract-docs', async () => {
+  const { dialog } = require('electron');
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Agregar documentos a la base de conocimiento',
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      { name: 'Documentos', extensions: ['pdf', 'docx', 'txt', 'md'] },
+      { name: 'PDF', extensions: ['pdf'] },
+      { name: 'Word', extensions: ['docx'] },
+      { name: 'Texto', extensions: ['txt', 'md'] }
+    ]
+  });
+  if (result.canceled || !result.filePaths.length) return { canceled: true };
+
+  const out = [];
+  const errors = [];
+  for (const filePath of result.filePaths) {
+    try {
+      const { filename, text } = await extractTextFromFile(filePath);
+      if (text && text.length > 0) {
+        out.push({ filename, text, addedAt: Date.now() });
+      } else {
+        errors.push(`${path.basename(filePath)} (sin texto extraíble)`);
+      }
+    } catch (err) {
+      errors.push(`${path.basename(filePath)}: ${err.message}`);
+    }
+  }
+  return { docs: out, errors };
+});
+
 ipcMain.handle('file:pick-and-extract-cv', async () => {
   const { dialog } = require('electron');
   const result = await dialog.showOpenDialog(mainWindow, {
@@ -859,6 +1461,55 @@ ipcMain.handle('permissions:open-settings', () => {
 });
 
 // Llamada a la IA (proxy desde main para evitar exponer la key al renderer)
+ipcMain.handle('ai:debug-prompt', async (_e, { kind, prompt }) => {
+  try {
+    const logPath = path.join(app.getPath('userData'), 'logs', 'last-prompt.txt');
+    const header = `\n\n===== ${kind} @ ${new Date().toISOString()} =====\n`;
+    fs.appendFileSync(logPath, header + (prompt || '').slice(0, 30000));
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+/**
+ * Retry transient AI errors with exponential backoff.
+ * Retries: 529 (overloaded), 503 (unavailable), 502/504 (gateway), 429 (rate limit),
+ * network failures (timeouts, resets, DNS, AggregateError from dual-stack failures).
+ * Does NOT retry 4xx auth/validation errors — those won't fix themselves.
+ */
+function isRetryableAIError(err) {
+  if (!err) return false;
+  // AggregateError = node aggregated multiple sub-errors (often IPv4 + IPv6 DNS or
+  // multi-address connect failures). Always retryable.
+  const isAggregate =
+    err.name === 'AggregateError' ||
+    (err.constructor && err.constructor.name === 'AggregateError') ||
+    Array.isArray(err.errors);
+  if (isAggregate) return true;
+  const msg = err.message || '';
+  const m = msg.match(/^HTTP (\d+):/);
+  if (!m) return /timeout|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|socket hang up|EAI_AGAIN|EHOSTUNREACH|ENETUNREACH/i.test(msg);
+  const code = parseInt(m[1], 10);
+  return code === 529 || code === 503 || code === 502 || code === 504 || code === 429;
+}
+
+async function withRetry(fn, label) {
+  const delays = [1500, 3500, 8000]; // up to ~13s total before giving up
+  let lastErr;
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      if (attempt === delays.length || !isRetryableAIError(e)) throw e;
+      mainLog.warn(`${label} retrying`, { attempt: attempt + 1, error: e.message.slice(0, 200) });
+      await new Promise(r => setTimeout(r, delays[attempt]));
+    }
+  }
+  throw lastErr;
+}
+
 ipcMain.handle('ai:call', async (_e, payload) => {
   const cfg = loadConfig();
   if (!cfg.apiKey) throw new Error('Falta configurar la API key.');
@@ -867,10 +1518,10 @@ ipcMain.handle('ai:call', async (_e, payload) => {
   const tokens = maxTokens || 1500;
   if (cfg.provider === 'openai') {
     const m = overrideModel || cfg.model || 'gpt-4o-mini';
-    return callOpenAI(cfg.apiKey, m, system, messages, tokens);
+    return withRetry(() => callOpenAI(cfg.apiKey, m, system, messages, tokens), 'openai');
   }
   const m = overrideModel || cfg.model || 'claude-haiku-4-5';
-  return callAnthropic(cfg.apiKey, m, system, messages, tokens);
+  return withRetry(() => callAnthropic(cfg.apiKey, m, system, messages, tokens), 'anthropic');
 });
 
 function httpsJSON(url, options, body) {
@@ -887,7 +1538,20 @@ function httpsJSON(url, options, body) {
         catch (e) { reject(new Error('Respuesta no JSON: ' + text.slice(0, 250))); }
       });
     });
-    req.on('error', reject);
+    // Unwrap AggregateError (multi-address / dual-stack connect failures)
+    // into a useful message; without this it reaches the renderer as bare
+    // "AggregateError" with no .message, useless for debugging.
+    req.on('error', (err) => {
+      if (err && (err.name === 'AggregateError' || Array.isArray(err.errors))) {
+        const parts = (err.errors || []).map(e => e && (e.code || e.message)).filter(Boolean);
+        const summary = parts.length ? parts.join(' / ') : 'multiple connect failures';
+        const wrapped = new Error(`Network unreachable (${summary})`);
+        wrapped.name = 'AggregateError';
+        wrapped.errors = err.errors;
+        return reject(wrapped);
+      }
+      reject(err);
+    });
     if (body) req.write(body);
     req.end();
   });
@@ -1059,6 +1723,9 @@ app.whenReady().then(() => {
   }
 
   createWindow();
+  // Start the Binance liquidation WS — feeds the Scalp Radar magnets and the
+  // analyzer prompt's recent-liquidations block.
+  try { liquidationStream.start(); } catch (e) { mainLog.warn('liq stream start failed', e); }
   // createTray();  // ← desactivado: querés stealth total. La traés con ⌘+Shift+H.
   registerShortcuts();
 

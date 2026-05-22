@@ -14,12 +14,16 @@
         <span class="title">Phantom</span>
       </div>
       <div class="header-actions">
+        <button class="icon-btn" id="btn-watcher" data-i18n-title="watcher.toggle" data-tip="Modo vigilante: solo trading en vivo">👁</button>
         <button class="icon-btn" id="opacity" data-i18n-title="header.opacity_tooltip">◐</button>
         <button class="icon-btn" id="settings" data-i18n-title="header.settings_tooltip">⚙</button>
         <button class="icon-btn" id="hide" data-i18n-title="header.hide_tooltip">—</button>
         <button class="icon-btn" id="close" data-i18n-title="header.close_tooltip">×</button>
       </div>
     </div>
+
+    <!-- Floating exit pill — only visible in watcher mode -->
+    <button class="watcher-exit" id="watcher-exit" data-i18n="watcher.exit" title="Salir del modo vigilante">⨯ Salir vigilante</button>
 
     <div class="body">
       <div class="actions">
@@ -88,6 +92,8 @@
           <span class="collapse-chevron">▾</span>
           <span class="trading-title" data-i18n="trading.title">📈 Trading</span>
           <div class="trading-controls">
+            <button class="btn btn-mini" id="btn-trading-playbook" data-i18n="playbook.button" data-i18n-title="playbook.button_title" title="Plan de Precios detallado">📋 Plan</button>
+            <button class="btn btn-mini" id="btn-trading-popout" data-i18n="trading.popout" data-i18n-title="trading.popout_title" title="Abrir en ventana separada">🪟</button>
             <button class="btn btn-mini" id="btn-trading-analyze" data-i18n="trading.analyze">Analizar</button>
           </div>
         </div>
@@ -104,14 +110,219 @@
             <label class="ti-label" data-i18n="trading.asset_label">Activo (opcional)</label>
             <input type="text" id="trading-asset-input" data-i18n-placeholder="trading.asset_placeholder" />
           </div>
+          <!-- Auto-analysis alerts -->
+          <div class="trading-auto">
+            <div class="auto-toggle-row">
+              <label class="ti-label">⏰ Auto-análisis</label>
+              <label class="switch-small">
+                <input type="checkbox" id="trading-auto-toggle" />
+                <span class="slider-small"></span>
+              </label>
+            </div>
+            <div class="auto-settings" id="auto-settings" style="display:none;">
+              <div class="auto-row">
+                <select id="auto-interval">
+                  <option value="15">15 min</option>
+                  <option value="30" selected>30 min</option>
+                  <option value="60">1 hora</option>
+                  <option value="120">2 horas</option>
+                </select>
+                <input type="email" id="auto-email" placeholder="tu@email.com" />
+              </div>
+              <div class="auto-status" id="auto-status"></div>
+            </div>
+          </div>
+
           <div class="trading-result" id="trading-result" style="display:none;">
             <div class="ti-label" data-i18n="trading.analysis_label">Análisis</div>
             <div class="tr-text" id="trading-result-text"></div>
+          </div>
+
+          <!-- ─── Playbook — Plan de precios detallado, on-demand ─── -->
+          <div class="pb-panel" id="pb-panel">
+            <div class="pb-header">
+              <div class="pb-title">
+                <span data-i18n="playbook.title">📋 Plan de Precios</span>
+                <span class="pb-meta" id="pb-meta"></span>
+              </div>
+              <div class="pb-actions">
+                <button class="pb-btn pb-btn-primary" id="pb-generate" data-i18n="playbook.generate" data-i18n-title="playbook.generate_title">🎯 Generar plan</button>
+                <span class="pb-status" id="pb-status"></span>
+              </div>
+            </div>
+            <div class="pb-armed-row">
+              <label class="pb-armed-toggle">
+                <input type="checkbox" id="pb-armed-master" />
+                <span data-i18n="playbook.armed">🔔 Alertas armadas — mandar email cuando se cumpla un trigger</span>
+              </label>
+              <input type="email" id="pb-armed-email" placeholder="email@..." class="pb-armed-email" />
+            </div>
+            <div class="pb-chart-wrap" id="pb-chart-wrap"></div>
+            <div class="pb-body" id="pb-body">
+              <div class="pb-empty" data-i18n="playbook.empty">Sin plan aún. Apretá 🎯 para que el agente analize todo y arme escenarios con precios concretos.</div>
+            </div>
+          </div>
+
+          <!-- ─── Insights — corto razonamiento del AI cada 15 min + botón manual ─── -->
+          <div class="ins-panel" id="ins-panel">
+            <div class="ins-header">
+              <div class="ins-title">
+                <span data-i18n="ins.title">🧠 Insights</span>
+                <span class="ins-countdown" id="ins-countdown" title="próximo auto"></span>
+              </div>
+              <div class="ins-actions">
+                <button class="ins-btn ins-btn-primary" id="ins-generate" data-i18n="ins.generate" data-i18n-title="ins.generate_title" title="Generar insight ahora">⚡ Ahora</button>
+                <button class="ins-btn" id="ins-toggle" data-i18n-title="ins.toggle" title="Pausar/Reanudar auto">⏸</button>
+                <span class="ins-status" id="ins-status"></span>
+              </div>
+            </div>
+            <div class="ins-feed" id="ins-feed">
+              <div class="ins-empty" data-i18n="ins.empty">Sin insights todavía. Apretá ⚡ Ahora o esperá 15 min.</div>
+            </div>
+          </div>
+
+          <!-- ─── Scalp Radar — high-frequency tactical panel for $200-300 BTC moves ─── -->
+          <div class="scalp-panel" id="scalp-panel">
+            <div class="scalp-header">
+              <div class="scalp-title">
+                <span class="scalp-dot" id="scalp-dot"></span>
+                <span>🎯 Scalp Radar</span>
+                <span class="scalp-mid" id="scalp-mid">—</span>
+              </div>
+              <div class="scalp-verdict-pill" id="scalp-verdict">WAIT</div>
+            </div>
+            <div class="scalp-pressure-row">
+              <div class="scalp-pressure-label">Pressure</div>
+              <div class="scalp-pressure-bar">
+                <div class="scalp-pressure-zero"></div>
+                <div class="scalp-pressure-fill" id="scalp-pressure-fill"></div>
+              </div>
+              <div class="scalp-pressure-value" id="scalp-pressure-value">0</div>
+            </div>
+            <div class="scalp-reason" id="scalp-reason">esperando datos…</div>
+            <div class="scalp-grid">
+              <div class="scalp-cell">
+                <div class="scalp-cell-label">Book imbalance</div>
+                <div class="scalp-cell-value" id="scalp-imbalance">—</div>
+              </div>
+              <div class="scalp-cell">
+                <div class="scalp-cell-label">CVD vel /min</div>
+                <div class="scalp-cell-value" id="scalp-cvd-vel">—</div>
+              </div>
+              <div class="scalp-cell">
+                <div class="scalp-cell-label">Aggressor 60s</div>
+                <div class="scalp-cell-value" id="scalp-aggressor">—</div>
+              </div>
+              <div class="scalp-cell">
+                <div class="scalp-cell-label">Tape t/s</div>
+                <div class="scalp-cell-value" id="scalp-tape-speed">—</div>
+              </div>
+              <div class="scalp-cell">
+                <div class="scalp-cell-label">Spread</div>
+                <div class="scalp-cell-value" id="scalp-spread">—</div>
+              </div>
+              <div class="scalp-cell">
+                <div class="scalp-cell-label">Whale flow 5m</div>
+                <div class="scalp-cell-value" id="scalp-whale-flow">—</div>
+              </div>
+            </div>
+            <div class="scalp-magnet" id="scalp-magnet"></div>
+            <div class="scalp-liq" id="scalp-liq"></div>
+            <div class="scalp-trap" id="scalp-trap"></div>
+          </div>
+
+          <!-- ─── Market Pulse — live trade feed + CVD + walls (refresh every 5s) ─── -->
+          <div class="mp-panel" id="mp-panel">
+            <div class="mp-header">
+              <div class="mp-title">
+                <span class="mp-dot" id="mp-dot"></span>
+                <span data-i18n="mp.title">Market Pulse</span>
+                <span class="mp-asset" id="mp-asset">—</span>
+              </div>
+              <div class="mp-actions">
+                <button class="mp-btn" id="mp-toggle" data-i18n-title="mp.toggle" title="Pausar/Reanudar">⏸</button>
+                <button class="mp-btn" id="mp-popout" data-i18n-title="mp.popout" title="Abrir en ventana separada">🪟</button>
+                <span class="mp-status" id="mp-status" data-i18n="mp.idle">en espera</span>
+              </div>
+            </div>
+
+            <div class="mp-bias-row">
+              <div class="mp-bias-label">
+                <span class="mp-buys" id="mp-buy-pct">—</span>
+                <span data-i18n="mp.cvd">CVD</span>
+                <span class="mp-sells" id="mp-sell-pct">—</span>
+              </div>
+              <div class="mp-bias-bar">
+                <div class="mp-bias-fill-buy" id="mp-bias-fill-buy" style="width:50%"></div>
+                <div class="mp-bias-fill-sell" id="mp-bias-fill-sell" style="width:50%"></div>
+              </div>
+              <div class="mp-bias-verdict" id="mp-bias-verdict" data-i18n="mp.waiting">esperando datos…</div>
+            </div>
+
+            <div class="mp-grid">
+              <!-- Walls FIRST so they're always above the fold in single-column layouts -->
+              <div class="mp-col mp-col-walls">
+                <div class="mp-col-title" data-i18n="mp.walls">Bloques de órdenes</div>
+                <div class="mp-walls" id="mp-walls"></div>
+              </div>
+              <div class="mp-col mp-col-tape">
+                <div class="mp-col-title" data-i18n="mp.tape">Tape en vivo</div>
+                <div class="mp-tape" id="mp-tape"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="news-panel" id="news-panel" style="display:none;">
+            <div class="ti-label">📰 Contexto de noticias</div>
+            <div id="news-panel-content"></div>
+            <div class="news-footer" id="news-panel-footer"></div>
+          </div>
+
+          <!-- Post-analysis logging prompt -->
+          <div id="trade-log-prompt" class="trade-log-prompt" style="display:none;">
+            <div class="tlp-title">📝 ¿Entraste a este trade?</div>
+            <div class="tlp-buttons">
+              <button class="tlp-btn tlp-long"  data-action="long">🟢 LONG</button>
+              <button class="tlp-btn tlp-short" data-action="short">🔴 SHORT</button>
+              <button class="tlp-btn tlp-skip"  data-action="skipped">⏭ SKIP</button>
+            </div>
+            <div class="tlp-extra" id="tlp-entry-row" style="display:none;">
+              <input type="number" step="any" id="tlp-entry" placeholder="Precio de entrada (opcional)" />
+              <input type="number" step="any" id="tlp-size" placeholder="Tamaño %" />
+              <button id="tlp-save">Guardar</button>
+            </div>
+            <div class="tlp-status" id="tlp-status"></div>
+          </div>
+
+          <!-- Open trades + stats -->
+          <div class="trade-history" id="trade-history">
+            <div class="th-tabs">
+              <button class="th-tab active" data-tab="open">🔄 Abiertos</button>
+              <button class="th-tab"        data-tab="closed">✅ Cerrados</button>
+              <button class="th-tab"        data-tab="stats">📊 Stats</button>
+            </div>
+            <div class="th-content" id="th-content">
+              <div class="th-empty">Sin trades aún. Generá un análisis y marcá si entraste.</div>
+            </div>
           </div>
         </div>
       </div>
 
       <div class="settings-panel" id="settings-panel" style="display:none;">
+
+        <!-- ─── FEATURES — mostrar / ocultar funciones ─── -->
+        <div class="setting-group">
+          <label class="setting-label" data-i18n="settings.features_label">🎛 Funcionalidades activas</label>
+          <div class="hint" data-i18n="settings.features_hint">Activá solo lo que usás. Las demás se ocultan de la UI.</div>
+          <label class="checkbox-row"><input type="checkbox" id="cfg-feature-trading" />
+            <span data-i18n="settings.feature_trading">📈 Trading</span></label>
+          <label class="checkbox-row"><input type="checkbox" id="cfg-feature-screen" />
+            <span data-i18n="settings.feature_screen">📄 Leer pantalla / Contestar</span></label>
+          <label class="checkbox-row"><input type="checkbox" id="cfg-feature-interview" />
+            <span data-i18n="settings.feature_interview">🎤 Entrevista</span></label>
+          <label class="checkbox-row"><input type="checkbox" id="cfg-feature-translate" />
+            <span data-i18n="settings.feature_translate">🌍 Traducción</span></label>
+        </div>
 
         <!-- ─── IDIOMA DE LA APP ─── -->
         <div class="setting-group">
@@ -244,8 +455,11 @@
           <select id="cfg-trading-model">
             <option value="">— Usar modelo general —</option>
             <optgroup label="Anthropic">
-              <option value="claude-sonnet-4-20250514">Claude Sonnet 4 (Recomendado)</option>
-              <option value="claude-opus-4-20250514">Claude Opus 4 (Máximo)</option>
+              <option value="claude-opus-4-7">Claude Opus 4.7 (Máximo — Recomendado)</option>
+              <option value="claude-opus-4-6">Claude Opus 4.6</option>
+              <option value="claude-sonnet-4-6">Claude Sonnet 4.6 (Balanceado)</option>
+              <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
+              <option value="claude-opus-4-20250514">Claude Opus 4</option>
               <option value="claude-haiku-4-5">Claude Haiku 4.5 (Rápido)</option>
             </optgroup>
             <optgroup label="OpenAI">
@@ -282,6 +496,25 @@
           </div>
         </div>
 
+        <!-- ─── X (Twitter) integration ─── -->
+        <div class="setting-group">
+          <label class="setting-label">𝕏 Twitter (sentimiento social)</label>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+              <input type="checkbox" id="cfg-x-enabled" />
+              <span>Incluir tweets en análisis</span>
+            </label>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <button id="btn-x-login" style="padding:6px 10px;border-radius:6px;border:1px solid rgba(148,163,184,0.3);background:rgba(99,102,241,0.15);color:inherit;cursor:pointer;font-size:12px">🔑 Conectar X</button>
+            <button id="btn-x-logout" style="padding:6px 10px;border-radius:6px;border:1px solid rgba(239,68,68,0.3);background:transparent;color:#ef4444;cursor:pointer;font-size:12px;display:none">Desconectar</button>
+            <span id="x-auth-status" style="font-size:11px;opacity:0.7;align-self:center;margin-left:auto"></span>
+          </div>
+          <div class="hint" style="font-size:10px;padding:6px 0 0 0;background:none;border:none;line-height:1.4;opacity:0.75">
+            ⚠ Solo uso personal. Recomendamos usar una cuenta secundaria de X (no la principal). El primer login abre una ventana visible; los siguientes son automáticos en segundo plano.
+          </div>
+        </div>
+
         <div class="setting-divider" data-i18n="settings.interview_divider">🎓 Modo Entrevista</div>
 
         <label class="checkbox-row">
@@ -298,6 +531,19 @@
         <div class="setting-group">
           <label class="setting-label" data-i18n="settings.context">Contexto adicional</label>
           <textarea id="cfg-interview-context" rows="3" data-i18n-placeholder="settings.context_placeholder" style="font-family:inherit;font-size:12px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:7px;color:#1a3a5c;background:#fff;resize:vertical;"></textarea>
+        </div>
+
+        <!-- 📚 Knowledge Base — múltiples documentos que el modelo consultará
+             antes de responder. Si la pregunta visible está cubierta en algún
+             doc, el modelo usa esa info como respuesta. -->
+        <div class="setting-group">
+          <label class="setting-label" data-i18n="settings.knowledge">📚 Documentación adicional (base de conocimiento)</label>
+          <p style="font-size:11px;color:#64748b;margin:0 0 8px;line-height:1.4;" data-i18n="settings.knowledge_hint">
+            Adjuntá documentos (PDF, Word, txt) con info que te puedan preguntar. Cuando uses "Contestar pregunta visible", el sistema lee primero acá. Si la pregunta coincide con algún tema, contesta usando esa info al instante.
+          </p>
+          <div id="knowledge-docs-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;"></div>
+          <button class="btn btn-secondary btn-mini" id="cfg-add-knowledge-doc" data-i18n="settings.knowledge_add" style="width:auto;">📎 Agregar documentos</button>
+          <span id="knowledge-total-meta" style="font-size:11px;color:#64748b;margin-left:10px;"></span>
         </div>
 
         <div class="setting-group" style="display:flex;flex-direction:row;gap:8px;">
@@ -343,6 +589,11 @@
   </div>
 
   <script src="i18n.js"></script>
+  <script src="strategies.js"></script>
+  <script src="../lib/ai-response-parser.js"></script>
+  <script src="../lib/news-summary.js"></script>
+  <script src="../lib/continuity.js"></script>
+  <script src="../lib/playbook-parser.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>
