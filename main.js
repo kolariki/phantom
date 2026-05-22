@@ -1255,6 +1255,29 @@ ipcMain.handle('interview:answer', async (_e, { question, conversationContext })
   const cv = (cfg.interviewCV || '').trim();
   const extra = (cfg.interviewContext || '').trim();
 
+  // 📚 Knowledge base — docs adicionales que el user adjuntó en settings.
+  // Se inyectan en el system prompt para que el modelo busque ahí cuando
+  // la pregunta de la entrevista esté cubierta por algún documento.
+  const kbDocs = Array.isArray(cfg.knowledgeDocs) ? cfg.knowledgeDocs : [];
+  let kbBlock = '';
+  if (kbDocs.length > 0) {
+    const lines = [
+      '',
+      '=== 📚 KNOWLEDGE BASE — Documentos adicionales del candidato ===',
+      'Si la pregunta de la entrevista está cubierta por algún documento de abajo,',
+      'usá esa información para construir la respuesta en PRIMERA PERSONA, como si',
+      'fuera tu conocimiento propio. NO menciones "según el documento" — incorporá',
+      'la info naturalmente. Si nada es relevante, ignorá este bloque.',
+      '',
+    ];
+    for (const d of kbDocs) {
+      lines.push(`──── DOC: ${d.filename} ────`);
+      lines.push(d.text);
+      lines.push('');
+    }
+    kbBlock = lines.join('\n');
+  }
+
   // Estilos: concise (corto), detailed (medio), complete (completo de entrevista)
   const styleMap = {
     concise:  'CONCISE: 1-2 sentences max. Direct and punchy.',
@@ -1299,7 +1322,8 @@ ${langRule}
 ${cv || '(no CV provided)'}
 
 === ADDITIONAL CONTEXT (company, position, etc) ===
-${extra || '(none)'}`;
+${extra || '(none)'}
+${kbBlock}`;
 
   const messages = [];
   if (conversationContext && conversationContext.length > 0) {
