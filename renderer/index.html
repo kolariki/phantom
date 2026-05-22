@@ -27,9 +27,9 @@
 
     <div class="body">
       <div class="actions">
-        <button class="btn btn-primary" id="btn-read" data-i18n="nav.read_screen">📄 Leer pantalla</button>
-        <button class="btn btn-secondary" id="btn-answer" data-i18n="nav.answer">💡 Contestar</button>
-        <button class="btn btn-secondary" id="btn-multi-capture" data-i18n="nav.multi_capture" title="Capturá varias secciones de la pantalla (útil con scroll) y enviá todas juntas">📸 Captura múltiple</button>
+        <button class="btn btn-primary" id="btn-read" data-i18n="nav.read_screen" data-i18n-help="help.read_screen">📄 Leer pantalla</button>
+        <button class="btn btn-secondary" id="btn-answer" data-i18n="nav.answer" data-i18n-help="help.answer">💡 Contestar</button>
+        <button class="btn btn-secondary" id="btn-multi-capture" data-i18n="nav.multi_capture" data-i18n-help="help.multi_capture">📸 Captura múltiple</button>
       </div>
 
       <!-- Panel multi-captura — sólo visible mientras está activo el modo -->
@@ -45,8 +45,8 @@
           Scrolleá la pantalla y tocá <strong>"+ Agregar"</strong> (o <strong>Cmd+Shift+M</strong>) por cada parte que querés capturar. Cuando termines, tocá <strong>Enviar</strong> para mandar todas juntas.
         </p>
         <div style="display:flex;gap:8px;">
-          <button class="btn btn-secondary btn-mini" id="btn-mc-add" style="flex:1;">+ Agregar captura</button>
-          <button class="btn btn-primary btn-mini" id="btn-mc-send" style="flex:1;" disabled>Enviar (0)</button>
+          <button class="btn btn-secondary btn-mini" id="btn-mc-add" data-i18n-help="help.multi_add" style="flex:1;">+ Agregar captura</button>
+          <button class="btn btn-primary btn-mini" id="btn-mc-send" data-i18n-help="help.multi_send" style="flex:1;" disabled>Enviar (0)</button>
         </div>
       </div>
 
@@ -402,7 +402,7 @@
         </div>
 
         <label class="checkbox-row">
-          <input type="checkbox" id="cfg-stealth" checked />
+          <input type="checkbox" id="cfg-stealth" data-i18n-help="help.stealth" checked />
           <span data-i18n="settings.stealth">🥷 Invisible para screen capture</span>
         </label>
 
@@ -418,7 +418,7 @@
         <div class="setting-divider" data-i18n="settings.translate_divider">🎙️ Traducción en vivo</div>
 
         <label class="checkbox-row">
-          <input type="checkbox" id="cfg-translate" />
+          <input type="checkbox" id="cfg-translate" data-i18n-help="help.translate_enable" />
           <span data-i18n="settings.translate_enable">Activar traducción de audio del sistema</span>
         </label>
 
@@ -465,7 +465,7 @@
         <div class="setting-divider" data-i18n="settings.trading_divider">📈 Trading</div>
 
         <label class="checkbox-row">
-          <input type="checkbox" id="cfg-trading" />
+          <input type="checkbox" id="cfg-trading" data-i18n-help="help.trading_enable" />
           <span data-i18n="settings.trading_enable">Activar análisis de gráficos de trading</span>
         </label>
 
@@ -537,18 +537,18 @@
         <div class="setting-divider" data-i18n="settings.interview_divider">🎓 Modo Entrevista</div>
 
         <label class="checkbox-row">
-          <input type="checkbox" id="cfg-interview" />
+          <input type="checkbox" id="cfg-interview" data-i18n-help="help.interview_enable" />
           <span data-i18n="settings.interview_enable">Activar respuestas automáticas con mi CV</span>
         </label>
 
         <div class="setting-group">
-          <label class="setting-label" data-i18n="settings.cv">Tu CV / experiencia</label>
+          <label class="setting-label" data-i18n="settings.cv" data-i18n-help="help.cv">Tu CV / experiencia</label>
           <textarea id="cfg-interview-cv" rows="6" data-i18n-placeholder="settings.cv_placeholder" style="font-family:inherit;font-size:12px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:7px;color:#1a3a5c;background:#fff;resize:vertical;"></textarea>
           <button class="btn btn-secondary btn-mini" id="cfg-upload-cv" data-i18n="settings.upload_file" style="width:auto;margin-top:4px;">📎 Cargar desde archivo</button>
         </div>
 
         <div class="setting-group">
-          <label class="setting-label" data-i18n="settings.context">Contexto adicional</label>
+          <label class="setting-label" data-i18n="settings.context" data-i18n-help="help.context">Contexto adicional</label>
           <textarea id="cfg-interview-context" rows="3" data-i18n-placeholder="settings.context_placeholder" style="font-family:inherit;font-size:12px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:7px;color:#1a3a5c;background:#fff;resize:vertical;"></textarea>
         </div>
 
@@ -556,7 +556,7 @@
              antes de responder. Si la pregunta visible está cubierta en algún
              doc, el modelo usa esa info como respuesta. -->
         <div class="setting-group">
-          <label class="setting-label" data-i18n="settings.knowledge">📚 Documentación adicional (base de conocimiento)</label>
+          <label class="setting-label" data-i18n="settings.knowledge" data-i18n-help="help.knowledge_docs">📚 Documentación adicional (base de conocimiento)</label>
           <p style="font-size:11px;color:#64748b;margin:0 0 8px;line-height:1.4;" data-i18n="settings.knowledge_hint">
             Adjuntá documentos (PDF, Word, txt) con info que te puedan preguntar. Cuando uses "Contestar pregunta visible", el sistema lee primero acá. Si la pregunta coincide con algún tema, contesta usando esa info al instante.
           </p>
@@ -567,7 +567,7 @@
 
         <div class="setting-group" style="display:flex;flex-direction:row;gap:8px;">
           <div style="flex:1;">
-            <label class="setting-label" data-i18n="settings.style">Estilo</label>
+            <label class="setting-label" data-i18n="settings.style" data-i18n-help="help.style">Estilo</label>
             <select id="cfg-interview-style">
               <option value="concise" data-i18n="settings.style.concise">Conciso</option>
               <option value="detailed" data-i18n="settings.style.detailed">Detallado</option>
@@ -575,7 +575,7 @@
             </select>
           </div>
           <div style="flex:1;">
-            <label class="setting-label" data-i18n="settings.answer_lang">Idioma respuesta</label>
+            <label class="setting-label" data-i18n="settings.answer_lang" data-i18n-help="help.answer_lang">Idioma respuesta</label>
             <select id="cfg-interview-language">
               <option value="auto" data-i18n="settings.answer_lang.auto">Igual a la pregunta</option>
               <option value="es" data-i18n="settings.lang.es">Español</option>
