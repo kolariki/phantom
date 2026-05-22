@@ -29,6 +29,25 @@
       <div class="actions">
         <button class="btn btn-primary" id="btn-read" data-i18n="nav.read_screen">📄 Leer pantalla</button>
         <button class="btn btn-secondary" id="btn-answer" data-i18n="nav.answer">💡 Contestar</button>
+        <button class="btn btn-secondary" id="btn-multi-capture" data-i18n="nav.multi_capture" title="Capturá varias secciones de la pantalla (útil con scroll) y enviá todas juntas">📸 Captura múltiple</button>
+      </div>
+
+      <!-- Panel multi-captura — sólo visible mientras está activo el modo -->
+      <div id="multi-capture-panel" style="display:none;background:#fef3c7;border:2px solid #f59e0b;border-radius:10px;padding:12px;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <span style="font-size:14px;font-weight:600;color:#92400e;">📸 Modo captura múltiple</span>
+          <span id="mc-counter" style="font-size:12px;color:#78350f;background:#fde68a;padding:2px 8px;border-radius:999px;font-weight:600;">0 capturas</span>
+          <span style="flex:1;"></span>
+          <button class="btn btn-mini" id="btn-mc-cancel" style="background:#fee2e2;color:#991b1b;">Cancelar</button>
+        </div>
+        <div id="mc-thumbs" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;min-height:24px;"></div>
+        <p style="font-size:11px;color:#78350f;margin:0 0 8px;line-height:1.4;">
+          Scrolleá la pantalla y tocá <strong>"+ Agregar"</strong> (o <strong>Cmd+Shift+M</strong>) por cada parte que querés capturar. Cuando termines, tocá <strong>Enviar</strong> para mandar todas juntas.
+        </p>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-secondary btn-mini" id="btn-mc-add" style="flex:1;">+ Agregar captura</button>
+          <button class="btn btn-primary btn-mini" id="btn-mc-send" style="flex:1;" disabled>Enviar (0)</button>
+        </div>
       </div>
 
       <div class="interview-panel collapsible-panel" id="interview-panel" style="display:none;">

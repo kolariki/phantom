@@ -97,7 +97,8 @@ contextBridge.exposeInMainWorld('phantom', {
   },
   on: (channel, fn) => {
     const allowed = [
-      'shortcut:analyze', 'shortcut:answer', 'opacity:changed',
+      'shortcut:analyze', 'shortcut:answer', 'shortcut:multi-capture-add',
+      'opacity:changed',
       'deepgram:interim', 'deepgram:final', 'deepgram:error'
     ];
     if (allowed.includes(channel)) {

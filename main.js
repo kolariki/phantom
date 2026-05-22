@@ -1710,6 +1710,14 @@ function registerShortcuts() {
     }
   });
 
+  // Cmd+Shift+M → modo multi-captura (agrega una screenshot al lote actual,
+  // o lo inicia si no hay uno en curso)
+  globalShortcut.register('CommandOrControl+Shift+M', () => {
+    if (!mainWindow) return;
+    if (!mainWindow.isVisible()) mainWindow.show();
+    mainWindow.webContents.send('shortcut:multi-capture-add');
+  });
+
   // Cmd+Shift+O → ciclar opacidad (100% → 75% → 50% → 30% → 100%)
   globalShortcut.register('CommandOrControl+Shift+O', () => {
     if (!mainWindow) return;

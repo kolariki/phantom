@@ -17,7 +17,12 @@ const chatInput = $('chat-input');
 const state = {
   busy: false,
   messages: [],
-  mode: 'responder'
+  mode: 'responder',
+  // Multi-captura: array de dataURLs y flag de modo activo
+  multiCaptures: [],
+  multiMode: false,
+  // Knowledge base (docs adjuntos por el user)
+  knowledgeDocs: []
 };
 
 // ─── System prompts (dinámicos según idioma de la UI) ───────────
@@ -217,6 +222,159 @@ function getUserPrompt(action) {
 // ─── Listeners UI ────────────────────────────────────────────────
 $('btn-read').addEventListener('click', () => runAction('resumir'));
 $('btn-answer').addEventListener('click', () => runAction('responder'));
+
+// ─── 📸 Modo Multi-captura ───────────────────────────────────────────
+// Permite tomar varias screenshots (mientras el user scrollea o cambia de
+// vista) y enviarlas todas juntas para que el modelo tenga el contexto
+// completo. Las imágenes se acumulan en state.multiCaptures y se envían
+// en UN solo request al darle "Enviar".
+const mcPanel  = document.getElementById('multi-capture-panel');
+const mcThumbs = document.getElementById('mc-thumbs');
+const mcCounter = document.getElementById('mc-counter');
+const mcBtnAdd  = document.getElementById('btn-mc-add');
+const mcBtnSend = document.getElementById('btn-mc-send');
+const mcBtnCancel = document.getElementById('btn-mc-cancel');
+const mcBtnStart = document.getElementById('btn-multi-capture');
+
+function mcRender() {
+  const n = state.multiCaptures.length;
+  mcCounter.textContent = `${n} captura${n === 1 ? '' : 's'}`;
+  mcBtnSend.textContent = `Enviar (${n})`;
+  mcBtnSend.disabled = n === 0 || state.busy;
+  mcThumbs.innerHTML = '';
+  state.multiCaptures.forEach((dataUrl, i) => {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:relative;width:64px;height:48px;border-radius:6px;overflow:hidden;border:1px solid #fbbf24;background:#fff;';
+    wrap.innerHTML = `
+      <img src="${dataUrl}" style="width:100%;height:100%;object-fit:cover;" />
+      <span style="position:absolute;top:1px;left:3px;font-size:10px;font-weight:700;background:#000;color:#fff;border-radius:3px;padding:0 4px;">${i + 1}</span>
+      <button data-idx="${i}" class="mc-del" style="position:absolute;top:1px;right:1px;width:18px;height:18px;background:#dc2626;color:#fff;border:0;border-radius:50%;cursor:pointer;font-size:11px;line-height:1;padding:0;">×</button>
+    `;
+    mcThumbs.appendChild(wrap);
+  });
+  mcThumbs.querySelectorAll('.mc-del').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.idx, 10);
+      state.multiCaptures.splice(idx, 1);
+      mcRender();
+    });
+  });
+}
+
+function mcStart() {
+  if (state.busy) return;
+  state.multiCaptures = [];
+  state.multiMode = true;
+  mcPanel.style.display = 'block';
+  mcRender();
+  setStatus('Modo captura múltiple — sumá capturas y enviá cuando termines', 'busy');
+}
+
+function mcCancel() {
+  state.multiCaptures = [];
+  state.multiMode = false;
+  mcPanel.style.display = 'none';
+  setStatus(t('status.initial') || 'Listo.', 'ok');
+}
+
+async function mcAddOne() {
+  if (state.busy) return;
+  // Pequeño feedback: ocultar la app un instante para no contaminar la captura
+  const wasVisible = mcPanel.style.display !== 'none';
+  try {
+    setStatus('Capturando…', 'busy');
+    await phantom.window.hide?.();
+    // Pausa para que macOS termine de ocultar la ventana antes del screenshot
+    await new Promise(r => setTimeout(r, 200));
+    const shot = await captureScreen();
+    if (shot) state.multiCaptures.push(shot);
+    await phantom.window.show?.();
+    setStatus(`Captura ${state.multiCaptures.length} agregada`, 'ok');
+  } catch (err) {
+    setStatus('⚠ ' + err.message, 'err');
+    try { await phantom.window.show?.(); } catch (_) {}
+  }
+  if (wasVisible) mcPanel.style.display = 'block';
+  mcRender();
+}
+
+async function mcSend() {
+  if (state.busy || state.multiCaptures.length === 0) return;
+  state.busy = true;
+  mcRender();
+
+  // Limpiar conversación previa para mostrar la nueva sesión
+  state.mode = 'responder';
+  state.messages = [];
+  conversationEl.innerHTML = '';
+  setDanger(false);
+
+  const n = state.multiCaptures.length;
+  setStatus(`Enviando ${n} captura${n === 1 ? '' : 's'}…`, 'busy');
+  addMessage('user', t('msg.user_answer') + ` (${n} capturas)`);
+  const loading = addMessage('assistant', '', true);
+
+  try {
+    const cfg = await phantom.config.get();
+    const userPrompt = getUserPrompt('responder');
+    const system = getSystemPrompt('responder');
+
+    // Construir content[] con TODAS las imágenes + el texto del prompt al final
+    const content = [];
+    for (const shot of state.multiCaptures) {
+      if (cfg.provider === 'openai') {
+        content.push({ type: 'image_url', image_url: { url: shot } });
+      } else {
+        const m = /^data:(image\/\w+);base64,(.+)$/.exec(shot);
+        if (m) content.push({ type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } });
+      }
+    }
+    content.push({
+      type: 'text',
+      text:
+        `${userPrompt}\n\nNOTA: te mando ${n} capturas de pantalla en orden (1 → ${n}) ` +
+        `porque el contenido tenía scroll y no entraba en una sola imagen. ` +
+        `Considerá todas las imágenes como una sola página/vista cuando respondas.`
+    });
+
+    const messages = [{ role: 'user', content }];
+    const resp = await phantom.ai.call({ messages, system });
+
+    const phishing = detectPhishing(resp.text);
+    const reply = stripPhishingMarker(resp.text);
+    loading.classList.remove('loading');
+    loading.innerHTML = renderMarkdown(reply);
+
+    state.messages.push({ role: 'user', content: userPrompt + ` (${n} screenshots)` });
+    state.messages.push({ role: 'assistant', content: reply });
+
+    setDanger(phishing);
+    chatWrap.style.display = 'flex';
+    setStatus(phishing ? t('status.phishing_detected') : t('status.answer_ready'), phishing ? 'err' : 'ok');
+
+    // Salir del modo multi-captura tras enviar
+    state.multiCaptures = [];
+    state.multiMode = false;
+    mcPanel.style.display = 'none';
+  } catch (err) {
+    loading.classList.remove('loading');
+    loading.innerHTML = '<em style="color:#dc2626">' + escapeHTML(err.message) + '</em>';
+    setStatus('⚠ ' + err.message, 'err');
+  } finally {
+    state.busy = false;
+    mcRender();
+  }
+}
+
+mcBtnStart.addEventListener('click', mcStart);
+mcBtnAdd.addEventListener('click', mcAddOne);
+mcBtnSend.addEventListener('click', mcSend);
+mcBtnCancel.addEventListener('click', mcCancel);
+// Shortcut: Cmd+Shift+M agrega una captura al modo activo
+phantom.on('shortcut:multi-capture-add', () => {
+  if (!state.multiMode) mcStart();
+  else mcAddOne();
+});
 $('btn-send').addEventListener('click', () => sendChat());
 $('btn-clear').addEventListener('click', () => clearChat());
 $('hide').addEventListener('click', () => phantom.window.hide());
