@@ -3,7 +3,7 @@ main = "src/worker.js"
 compatibility_date = "2024-01-01"
 
 [vars]
-DMG_URL = "https://github.com/kolariki/phantom/releases/download/v1.2.0/Phantom-1.2.0-arm64.dmg"
+DMG_URL = "https://github.com/kolariki/phantom/releases/download/v1.4.0/Phantom-1.4.0-arm64.dmg"
 ALLOWED_ORIGIN = "https://www.phantom-download.online"
 EMAIL_FROM = "Phantom Alerts <alerts@elevumgroup.com>"
 
