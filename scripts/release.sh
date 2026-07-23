@@ -4,8 +4,13 @@
 # Requisitos previos:
 #   1) Apple Developer Program activo ($99/año)
 #   2) Certificado "Developer ID Application: Ivan Kolarik (U858VRJWB9)" instalado en Keychain
-#   3) App-specific password generado en https://appleid.apple.com
-#   4) Variables de entorno seteadas (ver más abajo)
+#   3) Credenciales de notarización, por CUALQUIERA de los dos métodos que
+#      soporta scripts/after-sign.js:
+#        Método A — API Key de App Store Connect (recomendado, sin 2FA):
+#          APPLE_API_KEY_PATH / APPLE_API_KEY_ID / APPLE_API_ISSUER_ID
+#        Método B — Apple ID clásico (requiere app-specific password):
+#          APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID
+#      Si existe ~/.phantom-apple-creds se carga solo, no hace falta exportar nada.
 #
 # Uso:
 #   ./scripts/release.sh
@@ -20,27 +25,47 @@ echo "  🥷  PHANTOM — Build firmado + notarizado"
 echo "══════════════════════════════════════════════════════"
 echo ""
 
-# ─── Verificar variables de entorno ─────────────────────
-REQUIRED_VARS=(APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID)
-MISSING=()
-for v in "${REQUIRED_VARS[@]}"; do
-  if [ -z "${!v}" ]; then
-    MISSING+=("$v")
-  fi
-done
+# ─── Cargar credenciales guardadas (si existen) ──────────
+# Evita tener que exportar nada a mano en cada release.
+CREDS_FILE="$HOME/.phantom-apple-creds"
+if [ -f "$CREDS_FILE" ]; then
+  # shellcheck disable=SC1090
+  . "$CREDS_FILE"
+  echo "✓ Credenciales cargadas de ~/.phantom-apple-creds"
+fi
 
-if [ ${#MISSING[@]} -gt 0 ]; then
-  echo "❌  Faltan variables de entorno:"
-  for v in "${MISSING[@]}"; do
-    echo "    - $v"
-  done
+# ─── Verificar credenciales de notarización ──────────────
+# after-sign.js acepta dos métodos; con que esté COMPLETO uno alcanza.
+AUTH_METHOD=""
+if [ -n "$APPLE_API_KEY_PATH" ] && [ -n "$APPLE_API_KEY_ID" ] && [ -n "$APPLE_API_ISSUER_ID" ]; then
+  AUTH_METHOD="API Key"
+  if [ ! -f "$APPLE_API_KEY_PATH" ]; then
+    echo "❌  APPLE_API_KEY_PATH apunta a un archivo que no existe:"
+    echo "    $APPLE_API_KEY_PATH"
+    echo ""
+    echo "Descargá el .p8 de https://appstoreconnect.apple.com → Users and Access → Integrations → Keys"
+    exit 1
+  fi
+elif [ -n "$APPLE_ID" ] && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+  AUTH_METHOD="Apple ID + password"
+fi
+
+if [ -z "$AUTH_METHOD" ]; then
+  echo "❌  No hay credenciales completas para notarizar."
   echo ""
-  echo "Configurálas con:"
+  echo "Método A — API Key de App Store Connect (recomendado, sin 2FA):"
+  echo "    export APPLE_API_KEY_PATH='/ruta/AuthKey_XXXXXX.p8'"
+  echo "    export APPLE_API_KEY_ID='ABC123DEF4'"
+  echo "    export APPLE_API_ISSUER_ID='uuid-largo'"
+  echo "  La key se genera en https://appstoreconnect.apple.com → Users and Access → Integrations → Keys"
+  echo ""
+  echo "Método B — Apple ID clásico:"
   echo "    export APPLE_ID='tu@email.com'"
   echo "    export APPLE_APP_SPECIFIC_PASSWORD='xxxx-xxxx-xxxx-xxxx'"
   echo "    export APPLE_TEAM_ID='U858VRJWB9'"
+  echo "  El password se genera en https://appleid.apple.com → Sign-In and Security → App-Specific Passwords"
   echo ""
-  echo "El password lo generás en: https://appleid.apple.com → Sign-In and Security → App-Specific Passwords"
+  echo "Tip: guardalos en ~/.phantom-apple-creds y este script los carga solo."
   exit 1
 fi
 
@@ -57,7 +82,7 @@ if ! security find-identity -v -p codesigning | grep -q "$IDENTITY"; then
   exit 1
 fi
 
-echo "✓ Variables OK"
+echo "✓ Credenciales OK (notarización via $AUTH_METHOD)"
 echo "✓ Certificado OK ($IDENTITY)"
 echo ""
 
