@@ -49,7 +49,7 @@ document.querySelectorAll('a[href*="buy.stripe.com"]').forEach(btn => {
   btn.addEventListener('click', () => {
     track('begin_checkout', {
       currency: 'USD',
-      value: 2,
+      value: 9.99,
       items: [{ item_name: 'Phantom Lifetime' }]
     });
   });

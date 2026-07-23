@@ -4,3 +4,5 @@ dist/
 .env
 ~/.phantom-apple-creds
 assets/vids/
+docs/vids/
+dist-hosting/vids/

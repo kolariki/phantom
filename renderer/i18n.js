@@ -208,6 +208,9 @@ const translations = {
     'settings.exchange_passphrase': 'Passphrase (KuCoin)',
     'chat.placeholder': 'Preguntá algo más…',
     'chat.new': 'Nuevo',
+    'voice.mic_title': 'Preguntar con tu voz',
+    'voice.ask': '🎤 Preguntar',
+    'voice.ask_help': 'Hablale al micrófono. Cuando pares, lo manda al chat.',
     'chat.send': 'Enviar',
     'chat.copy': 'Copiar',
     'chat.copied': '¡Copiado!'
@@ -402,6 +405,9 @@ const translations = {
     'settings.exchange_passphrase': 'Passphrase (KuCoin)',
     'chat.placeholder': 'Ask something else…',
     'chat.new': 'New',
+    'voice.mic_title': 'Ask with your voice',
+    'voice.ask': '🎤 Ask',
+    'voice.ask_help': 'Talk to your mic. When you stop, it sends to chat.',
     'chat.send': 'Send',
     'chat.copy': 'Copy',
     'chat.copied': 'Copied!'
@@ -581,6 +587,9 @@ const translations = {
     'settings.exchange_secret': 'API Secret',
     'settings.exchange_passphrase': 'Passphrase (KuCoin)',
     'chat.new': 'Novo',
+    'voice.mic_title': 'Perguntar com sua voz',
+    'voice.ask': '🎤 Perguntar',
+    'voice.ask_help': 'Fale ao microfone. Ao parar, envia ao chat.',
     'chat.send': 'Enviar',
     'chat.copy': 'Copiar',
     'chat.copied': 'Copiado!'
@@ -756,6 +765,9 @@ const translations = {
     'settings.exchange_secret': 'API Secret',
     'settings.exchange_passphrase': 'Passphrase (KuCoin)',
     'chat.new': 'Nouveau',
+    'voice.mic_title': 'Demander avec ta voix',
+    'voice.ask': '🎤 Demander',
+    'voice.ask_help': 'Parle au micro. À l\'arrêt, c\'est envoyé au chat.',
     'chat.send': 'Envoyer',
     'chat.copy': 'Copier',
     'chat.copied': 'Copié !'
@@ -931,6 +943,9 @@ const translations = {
     'settings.exchange_secret': 'API Secret',
     'settings.exchange_passphrase': 'パスフレーズ (KuCoin)',
     'chat.new': '新規',
+    'voice.mic_title': '音声で質問する',
+    'voice.ask': '🎤 質問する',
+    'voice.ask_help': 'マイクに話してください。停止するとチャットに送信されます。',
     'chat.send': '送信',
     'chat.copy': 'コピー',
     'chat.copied': 'コピーしました!'
@@ -1106,6 +1121,9 @@ const translations = {
     'settings.exchange_secret': 'API Secret',
     'settings.exchange_passphrase': '密码 (KuCoin)',
     'chat.new': '新建',
+    'voice.mic_title': '用语音提问',
+    'voice.ask': '🎤 提问',
+    'voice.ask_help': '对着麦克风说话。停止后将发送到聊天。',
     'chat.send': '发送',
     'chat.copy': '复制',
     'chat.copied': '已复制!'

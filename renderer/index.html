@@ -29,7 +29,30 @@
       <div class="actions">
         <button class="btn btn-primary" id="btn-read" data-i18n="nav.read_screen" data-i18n-help="help.read_screen">📄 Leer pantalla</button>
         <button class="btn btn-secondary" id="btn-answer" data-i18n="nav.answer" data-i18n-help="help.answer">💡 Contestar</button>
+        <button class="btn btn-secondary" id="btn-voice-ask" data-i18n="voice.ask" data-i18n-help="voice.ask_help" data-i18n-title="voice.mic_title" title="Preguntar con tu voz">🎤 Preguntar</button>
+        <button class="btn btn-secondary" id="btn-cheatsheet" title="Cheat sheet: respuestas listas para recitar">❓ Preguntas</button>
         <button class="btn btn-secondary" id="btn-multi-capture" data-i18n="nav.multi_capture" data-i18n-help="help.multi_capture">📸 Captura múltiple</button>
+      </div>
+
+      <!-- ─── Cheat sheet panel — quick-access interview answers, pre-written
+           in spoken English. The user clicks a topic, the script appears in a
+           large readable area, and they read it out loud in real time. ─── -->
+      <div id="cheatsheet-panel" class="cheatsheet-panel" style="display:none;">
+        <div class="cs-header">
+          <span class="cs-title">❓ Interview cheat sheet</span>
+          <input type="text" id="cs-search" class="cs-search" placeholder="Filter… (e.g. RAG, langchain)" />
+          <button class="cs-add" id="cs-add" title="Subir documento → la IA genera el topic automáticamente">+ Add from doc</button>
+          <button class="cs-close" id="cs-close" title="Close">×</button>
+        </div>
+        <div class="cs-add-status" id="cs-add-status" style="display:none;"></div>
+        <div class="cs-grid" id="cs-grid"></div>
+        <div class="cs-script-wrap" id="cs-script-wrap" style="display:none;">
+          <div class="cs-script-header">
+            <span class="cs-script-title" id="cs-script-title">—</span>
+            <button class="cs-script-back" id="cs-script-back" title="Back to topics">← Back</button>
+          </div>
+          <div class="cs-script-body" id="cs-script-body"></div>
+        </div>
       </div>
 
       <!-- Panel multi-captura — sólo visible mientras está activo el modo -->
@@ -601,7 +624,13 @@
         <textarea id="chat-input" rows="2" data-i18n-placeholder="chat.placeholder"></textarea>
         <div class="chat-actions">
           <button class="btn btn-secondary btn-mini" id="btn-clear" data-i18n="chat.new">Nuevo</button>
+          <button class="btn btn-mic btn-mini" id="btn-mic" data-i18n-title="voice.mic_title" title="Preguntar con tu voz">🎤</button>
           <button class="btn btn-primary btn-mini" id="btn-send" data-i18n="chat.send">Enviar</button>
+        </div>
+        <div class="voice-status" id="voice-status" style="display:none;">
+          <span class="voice-dot"></span>
+          <span class="voice-status-text" id="voice-status-text">Escuchando…</span>
+          <span class="voice-transcript" id="voice-transcript"></span>
         </div>
       </div>
     </div>
@@ -609,6 +638,7 @@
 
   <script src="i18n.js"></script>
   <script src="strategies.js"></script>
+  <script src="cheatsheet-data.js"></script>
   <script src="../lib/ai-response-parser.js"></script>
   <script src="../lib/news-summary.js"></script>
   <script src="../lib/continuity.js"></script>

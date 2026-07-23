@@ -98,6 +98,7 @@ contextBridge.exposeInMainWorld('phantom', {
   on: (channel, fn) => {
     const allowed = [
       'shortcut:analyze', 'shortcut:answer', 'shortcut:multi-capture-add',
+      'shortcut:interview-toggle', 'shortcut:manual-record-toggle',
       'opacity:changed',
       'deepgram:interim', 'deepgram:final', 'deepgram:error'
     ];

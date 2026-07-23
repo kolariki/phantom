@@ -588,6 +588,21 @@ input[type="range"]:focus { outline: none; }
   border-radius: 10px;
   padding: 12px 14px;
   box-shadow: 0 4px 16px rgba(99, 102, 241, 0.15);
+  /* Preserve the model's paragraph breaks (\n\n) so the user can see where
+     to pause when reading aloud. Without this the textContent collapses
+     newlines into a single line. */
+  white-space: pre-line;
+}
+#interview-answer-text {
+  /* The actual answer text node — same paragraph-rendering treatment. */
+  white-space: pre-line;
+  display: block;
+}
+#interview-answer-text p,
+#interview-answer-text br + br {
+  /* Slight extra breathing room between paragraphs so the user can spot
+     them at a glance while talking. */
+  margin-top: 8px;
 }
 .ia-label {
   font-size: 10.5px;
@@ -633,7 +648,7 @@ input[type="range"]:focus { outline: none; }
   margin-bottom: 4px;
 }
 .ih-item .ih-q { font-size: 11px; color: #94a3b8; font-style: italic; margin-bottom: 3px; }
-.ih-item .ih-a { font-size: 12px; color: #1a3a5c; }
+.ih-item .ih-a { font-size: 12px; color: #1a3a5c; white-space: pre-line; }
 
 /* Botón de grabación manual */
 .btn-record {
@@ -2826,3 +2841,350 @@ body.show-plan .scalp-panel { display: block !important; }
   box-shadow: 0 0 8px rgba(46, 255, 163, 0.35);
 }
 
+/* ══════════════════════════════════════════════════════════════
+   Voice Input — 🎤 mic button + live transcript line
+   ══════════════════════════════════════════════════════════════ */
+.btn-mic {
+  background: rgba(255, 184, 74, 0.10);
+  border: 1px solid rgba(255, 184, 74, 0.35);
+  color: #ffb84a;
+  transition: background 0.15s, box-shadow 0.15s, transform 0.1s;
+  min-width: 38px;
+}
+.btn-mic:hover {
+  background: rgba(255, 184, 74, 0.22);
+  transform: translateY(-1px);
+}
+.btn-mic.recording {
+  background: rgba(255, 77, 77, 0.18);
+  border-color: rgba(255, 77, 77, 0.6);
+  color: #ff4d4d;
+  animation: micPulse 1.1s ease-in-out infinite;
+}
+@keyframes micPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 77, 77, 0.55); }
+  50%      { box-shadow: 0 0 0 6px rgba(255, 77, 77, 0); }
+}
+
+.voice-status {
+  margin-top: 6px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 77, 77, 0.06);
+  border: 1px solid rgba(255, 77, 77, 0.25);
+  border-radius: 6px;
+  font-size: 12px;
+  color: #ffd175;
+}
+.voice-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #ff4d4d;
+  box-shadow: 0 0 6px #ff4d4d;
+  animation: micPulse 1.1s ease-in-out infinite;
+  flex-shrink: 0;
+}
+.voice-status-text {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10.5px;
+  color: #ff8a8a;
+  white-space: nowrap;
+}
+.voice-transcript {
+  flex: 1;
+  font-style: italic;
+  opacity: 0.95;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   Cheat Sheet — interview answers grid + readable script view
+   ══════════════════════════════════════════════════════════════ */
+.cheatsheet-panel {
+  margin: 10px 0;
+  padding: 14px;
+  background: #0a0604;
+  border: 1px solid rgba(46, 255, 163, 0.35);
+  border-radius: 12px;
+  color: #ffd175;
+  font-family: 'Courier New', 'Menlo', monospace;
+  box-shadow: 0 4px 18px rgba(46, 255, 163, 0.10);
+}
+.cs-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.cs-title {
+  font-weight: 700;
+  font-size: 13px;
+  color: #2effa3;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  text-shadow: 0 0 6px rgba(46, 255, 163, 0.45);
+  flex-shrink: 0;
+}
+.cs-search {
+  flex: 1;
+  background: #000;
+  border: 1px solid rgba(255, 184, 74, 0.3);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-family: inherit;
+  color: #ffd175;
+  font-size: 12px;
+}
+.cs-search::placeholder { color: rgba(255, 209, 117, 0.45); }
+.cs-search:focus {
+  outline: none;
+  border-color: rgba(46, 255, 163, 0.6);
+  box-shadow: 0 0 0 2px rgba(46, 255, 163, 0.15);
+}
+.cs-close {
+  background: transparent;
+  border: 1px solid rgba(255, 77, 77, 0.4);
+  color: #ff4d4d;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.cs-close:hover {
+  background: rgba(255, 77, 77, 0.12);
+  border-color: rgba(255, 77, 77, 0.8);
+}
+
+.cs-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cs-cat-label {
+  font-size: 10px;
+  opacity: 0.65;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: #ffb84a;
+  margin-bottom: 6px;
+}
+.cs-cat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 6px;
+}
+.cs-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  background: #000;
+  border: 1px solid rgba(255, 184, 74, 0.25);
+  border-radius: 8px;
+  color: #fff3d6;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s, border-color 0.12s, transform 0.05s;
+}
+.cs-pill:hover {
+  background: rgba(46, 255, 163, 0.08);
+  border-color: rgba(46, 255, 163, 0.55);
+  transform: translateY(-1px);
+}
+.cs-pill-icon { font-size: 15px; flex-shrink: 0; }
+.cs-pill-title { font-weight: 700; }
+.cs-empty {
+  padding: 20px;
+  text-align: center;
+  opacity: 0.6;
+  font-size: 12px;
+}
+
+.cs-script-wrap {
+  background: #000;
+  border: 1px solid rgba(46, 255, 163, 0.35);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.cs-script-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed rgba(46, 255, 163, 0.25);
+}
+.cs-script-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: #2effa3;
+  text-shadow: 0 0 6px rgba(46, 255, 163, 0.4);
+}
+.cs-script-back {
+  background: rgba(255, 184, 74, 0.1);
+  border: 1px solid rgba(255, 184, 74, 0.4);
+  color: #ffb84a;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.cs-script-back:hover { background: rgba(255, 184, 74, 0.2); }
+.cs-script-body {
+  /* The script is meant to be READ OUT LOUD. Big text, generous line-height,
+     and \n\n in the data file becomes a real paragraph break thanks to
+     white-space: pre-line — so the user sees exactly where to pause. */
+  white-space: pre-line;
+  font-family: 'Georgia', 'Times New Roman', serif;
+  font-size: 16px;
+  line-height: 1.7;
+  color: #fff3d6;
+  letter-spacing: 0.005em;
+  max-height: 65vh;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+.cs-script-body::-webkit-scrollbar { width: 6px; }
+.cs-script-body::-webkit-scrollbar-thumb {
+  background: rgba(46, 255, 163, 0.35);
+  border-radius: 4px;
+}
+
+#btn-cheatsheet.active {
+  background: rgba(46, 255, 163, 0.15);
+  border-color: rgba(46, 255, 163, 0.5);
+  color: #2effa3;
+  box-shadow: 0 0 8px rgba(46, 255, 163, 0.3);
+}
+
+/* Cheat sheet — upload + AI generation UI */
+.cs-add {
+  background: rgba(46, 255, 163, 0.12);
+  border: 1px solid rgba(46, 255, 163, 0.45);
+  color: #2effa3;
+  font-family: 'Courier New', 'Menlo', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  letter-spacing: 0.04em;
+}
+.cs-add:hover:not(:disabled) {
+  background: rgba(46, 255, 163, 0.22);
+  box-shadow: 0 0 8px rgba(46, 255, 163, 0.3);
+}
+.cs-add:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.cs-add-status {
+  margin: 0 0 10px;
+  padding: 7px 10px;
+  font-size: 11.5px;
+  border-radius: 6px;
+  background: rgba(255, 184, 74, 0.08);
+  border: 1px solid rgba(255, 184, 74, 0.3);
+  color: #ffd175;
+}
+.cs-add-status.ok  { background: rgba(46, 255, 163, 0.10); border-color: rgba(46, 255, 163, 0.45); color: #2effa3; }
+.cs-add-status.err { background: rgba(255, 77, 77, 0.10);  border-color: rgba(255, 77, 77, 0.45);  color: #ff8a8a; }
+.cs-add-status.busy::before {
+  content: '';
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #ffb84a;
+  margin-right: 6px;
+  vertical-align: middle;
+  animation: scalpPulse 1.1s ease-in-out infinite;
+}
+
+/* User-added pills get a subtle green tint + a tiny dot so the user can tell
+   what came from the AI-generated upload flow vs the built-in defaults. */
+.cs-pill-user {
+  border-color: rgba(46, 255, 163, 0.5);
+  background: rgba(46, 255, 163, 0.04);
+}
+.cs-pill-mark {
+  margin-left: auto;
+  color: #2effa3;
+  font-size: 10px;
+  opacity: 0.9;
+  text-shadow: 0 0 4px rgba(46, 255, 163, 0.6);
+}
+
+.cs-script-delete {
+  background: rgba(255, 77, 77, 0.10);
+  border: 1px solid rgba(255, 77, 77, 0.45);
+  color: #ff8a8a;
+  font-family: 'Courier New', 'Menlo', monospace;
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-left: 8px;
+}
+.cs-script-delete:hover {
+  background: rgba(255, 77, 77, 0.22);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   KEYBOARD SHORTCUT BADGES
+   Each action button shows its key combo as a small <kbd>-style pill.
+   Rendered with ::after / ::before + attr(data-kbd) so the badge is
+   immune to textContent rewrites (i18n language switches, dynamic
+   button relabelling like "Enviar (3)", etc). The data-kbd attribute
+   is populated from the shortcut registry in renderer.js.
+   ════════════════════════════════════════════════════════════════ */
+
+/* Text buttons — combo shown inline, to the right of the label */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.btn[data-kbd]::after {
+  content: attr(data-kbd);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0.72;
+  background: rgba(26, 58, 92, 0.12);
+  color: #1a3a5c;
+}
+.btn-primary[data-kbd]::after { background: rgba(255, 255, 255, 0.22); color: #fff; opacity: 0.9; }
+.btn-mic[data-kbd]::after,
+.btn-record[data-kbd]::after { background: rgba(0, 0, 0, 0.14); color: inherit; opacity: 0.7; }
+
+/* Icon buttons (26px header glyphs) — a tiny corner chip with the key
+   letter; the full combo lives in the hover tooltip (data-tip). */
+.icon-btn[data-kbd]::before {
+  content: attr(data-kbd);
+  position: absolute;
+  top: -5px;
+  right: -4px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 1px 3px;
+  border-radius: 4px;
+  background: #3b82f6;
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  z-index: 5;
+}

@@ -509,9 +509,15 @@ ipcMain.handle('deepgram:start', async (_e, { language, sampleRate }) => {
     try { dgSocket.send(JSON.stringify({ type: 'CloseStream' })); dgSocket.close(); } catch {}
   }
 
-  const lang = (language && language !== 'auto') ? `&language=${language}` : '&detect_language=true';
+  // Multilingual streaming requires nova-3 + language=multi. nova-2 does NOT
+  // support detect_language in streaming (returns HTTP 400). When 'auto' is
+  // requested, switch to nova-3+multi; otherwise stay on nova-2 with the
+  // explicit language code (better accuracy for known-language streams).
+  const auto = !language || language === 'auto';
+  const model = auto ? 'nova-3' : 'nova-2';
+  const lang  = auto ? '&language=multi' : `&language=${language}`;
   const rate = sampleRate || 16000;
-  const url = `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=${rate}&channels=1&model=nova-2&interim_results=true&punctuate=true&endpointing=300${lang}`;
+  const url = `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=${rate}&channels=1&model=${model}&interim_results=true&punctuate=true&endpointing=300${lang}`;
 
   return new Promise((resolve, reject) => {
     dgSocket = new WebSocket(url, {
@@ -1280,9 +1286,9 @@ ipcMain.handle('interview:answer', async (_e, { question, conversationContext })
 
   // Estilos: concise (corto), detailed (medio), complete (completo de entrevista)
   const styleMap = {
-    concise:  'CONCISE: 1-2 sentences max. Direct and punchy.',
-    detailed: 'DETAILED: 3-5 sentences. Cover the main point with one supporting detail.',
-    complete: 'COMPLETE: 4-8 sentences forming 1-2 well-structured paragraphs. Give a full interview-quality answer that covers: the direct answer, a concrete example or experience from the CV, and the impact or learning. Sound thoughtful but natural.'
+    concise:  'CONCISE: 1-2 sentences max. Direct and punchy. Single paragraph.',
+    detailed: 'DETAILED: 3-5 sentences split into 2 paragraphs separated by a blank line. First paragraph: the direct answer + key point. Second paragraph: a concrete supporting detail or example.',
+    complete: 'COMPLETE: 4-8 sentences forming 2-3 well-structured paragraphs, EACH SEPARATED BY A BLANK LINE (double newline). Paragraph 1: the direct answer + the core idea. Paragraph 2: a concrete example or experience from the CV. Paragraph 3: the impact, learning, or conclusion. Sound thoughtful but natural.'
   };
   const styleKey = styleMap[cfg.interviewStyle] ? cfg.interviewStyle : 'complete';
   const style = styleMap[styleKey];
@@ -1309,6 +1315,25 @@ Examples:
 📏 STYLE — ${style}
 
 Sound human. Avoid corporate buzzwords ("synergy", "leverage", "ecosystem"). Don't list bullet points — speak in flowing sentences. Show personality.
+
+🔤 NUMBERS AS WORDS — CRITICAL FOR READING ALOUD:
+The user reads your answer OUT LOUD. They cannot quickly pronounce digits like "250,000" while speaking — they stumble. So write ALL numbers as words in the language of the answer.
+- "250,000 SKU" → "doscientos cincuenta mil SKU" (es) / "two hundred fifty thousand SKU" (en)
+- "$2.5M" → "dos millones y medio de dólares" / "two and a half million dollars"
+- "30%" → "treinta por ciento" / "thirty percent"
+- "2024" → "dos mil veinticuatro" / "twenty twenty-four"
+- "15 años" → "quince años" / "fifteen years"
+- "3x faster" → "tres veces más rápido" / "three times faster"
+- Decimals → say them naturally: "0.3 seconds" → "trescientos milisegundos" or "zero point three seconds"
+- Phone-like exact codes (version numbers, ports, etc.) → use words too: "puerto cuatro mil quinientos", "v dos punto cero"
+- Only exception: if the user EXPLICITLY asks for the number written ("dame el número"), then write it as digits.
+
+📐 PARAGRAPH STRUCTURE — CRITICAL FOR READABILITY:
+The user is going to READ YOUR ANSWER OUT LOUD in real time, in front of an interviewer. They need to know where to pause and breathe. So you MUST split the answer into clear paragraphs separated by ONE BLANK LINE between them (\\n\\n).
+- Each paragraph = one self-contained idea (around 2-4 sentences).
+- Paragraph break = a natural breath / pause point while speaking.
+- Never deliver a single wall of text. Even short answers (detailed/complete styles) get split.
+- The blank line between paragraphs MUST be an actual double-newline in your output — it's the visual cue the user uses to time their speech.
 
 ${langRule}
 
@@ -1657,6 +1682,22 @@ function createTray() {
         mainWindow?.webContents.send('shortcut:answer');
       }
     },
+    {
+      label: 'Entrevista: iniciar / detener escucha',
+      accelerator: 'CmdOrCtrl+Shift+I',
+      click: () => {
+        ensureVisible();
+        mainWindow?.webContents.send('shortcut:interview-toggle');
+      }
+    },
+    {
+      label: 'Grabarme y contestar como yo',
+      accelerator: 'CmdOrCtrl+Shift+G',
+      click: () => {
+        ensureVisible();
+        mainWindow?.webContents.send('shortcut:manual-record-toggle');
+      }
+    },
     { type: 'separator' },
     {
       label: 'Salir de Phantom',
@@ -1690,33 +1731,63 @@ function ensureVisible() {
 }
 
 // ─── Atajos globales ─────────────────────────────────────────────
+// `globalShortcut.register` returns `false` (silently) when another process
+// already owns the combo. That's the most common reason the user "presses
+// the shortcut and nothing happens" — Phantom never sees the keypress
+// because someone else got there first. We log each registration and
+// retry with a fallback for the conflict-prone ones so the user gets at
+// least one working binding even on a system with crowded global hotkeys.
 function registerShortcuts() {
-  // Cmd+Shift+H → ocultar/mostrar
-  globalShortcut.register('CommandOrControl+Shift+H', () => toggleWindow());
-
-  // Cmd+Shift+R → trigger "analizar pantalla" desde main
-  globalShortcut.register('CommandOrControl+Shift+R', () => {
-    if (mainWindow) {
-      if (!mainWindow.isVisible()) mainWindow.show();
-      mainWindow.webContents.send('shortcut:analyze');
+  function reg(accel, label, fn, fallbacks = []) {
+    const ok = globalShortcut.register(accel, fn);
+    if (ok) {
+      mainLog.info(`shortcut OK: ${accel} → ${label}`);
+      return accel;
     }
-  });
-
-  // Cmd+Shift+A → trigger "responder pregunta visible"
-  globalShortcut.register('CommandOrControl+Shift+A', () => {
-    if (mainWindow) {
-      if (!mainWindow.isVisible()) mainWindow.show();
-      mainWindow.webContents.send('shortcut:answer');
+    mainLog.warn(`shortcut FAILED to register: ${accel} (${label}). Trying fallbacks…`);
+    for (const fb of fallbacks) {
+      const ok2 = globalShortcut.register(fb, fn);
+      if (ok2) {
+        mainLog.info(`shortcut OK (fallback): ${fb} → ${label}`);
+        return fb;
+      }
+      mainLog.warn(`fallback FAILED: ${fb} (${label})`);
     }
-  });
+    return null;
+  }
 
-  // Cmd+Shift+M → modo multi-captura (agrega una screenshot al lote actual,
-  // o lo inicia si no hay uno en curso)
-  globalShortcut.register('CommandOrControl+Shift+M', () => {
-    if (!mainWindow) return;
-    if (!mainWindow.isVisible()) mainWindow.show();
-    mainWindow.webContents.send('shortcut:multi-capture-add');
-  });
+  function sendToRenderer(channel) {
+    return () => {
+      if (!mainWindow) {
+        mainLog.warn(`shortcut hit ${channel} but mainWindow is null`);
+        return;
+      }
+      if (!mainWindow.isVisible()) mainWindow.show();
+      try {
+        mainWindow.webContents.send(channel, Date.now());
+        mainLog.info(`shortcut sent to renderer: ${channel}`);
+      } catch (e) {
+        mainLog.warn(`shortcut send failed for ${channel}: ${e.message}`);
+      }
+    };
+  }
+
+  reg('CommandOrControl+Shift+H', 'toggle window', () => toggleWindow());
+
+  reg('CommandOrControl+Shift+R', 'analyze (resumir)',  sendToRenderer('shortcut:analyze'),
+      ['Alt+Shift+R', 'CommandOrControl+Option+R']);
+
+  reg('CommandOrControl+Shift+A', 'answer (contestar)', sendToRenderer('shortcut:answer'),
+      ['Alt+Shift+A', 'CommandOrControl+Option+A']);
+
+  reg('CommandOrControl+Shift+I', 'interview toggle',   sendToRenderer('shortcut:interview-toggle'),
+      ['Alt+Shift+I', 'CommandOrControl+Option+I']);
+
+  reg('CommandOrControl+Shift+G', 'manual record',      sendToRenderer('shortcut:manual-record-toggle'),
+      ['Alt+Shift+G', 'CommandOrControl+Option+G']);
+
+  reg('CommandOrControl+Shift+M', 'multi-capture',      sendToRenderer('shortcut:multi-capture-add'),
+      ['Alt+Shift+M', 'CommandOrControl+Option+M']);
 
   // Cmd+Shift+O → ciclar opacidad (100% → 75% → 50% → 30% → 100%)
   globalShortcut.register('CommandOrControl+Shift+O', () => {

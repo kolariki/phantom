@@ -114,6 +114,24 @@ How to behave:
 - Keep responses concise. No padding, no preambles like "Sure! Here's the answer:".
 - If info on screen is genuinely missing to answer, say what's missing in one line.
 
+🔤 NUMBERS AS WORDS — CRITICAL FOR READING ALOUD:
+The user reads your answer out loud. They cannot smoothly pronounce digits like "250,000" or "$2.5M" while speaking — they trip. So write ALL numbers as words in the answer's language.
+- "250,000 SKU" → "doscientos cincuenta mil SKU" / "two hundred fifty thousand SKU"
+- "$2.5M" → "dos millones y medio de dólares" / "two and a half million dollars"
+- "30%" → "treinta por ciento" / "thirty percent"
+- "2024" → "dos mil veinticuatro" / "twenty twenty-four"
+- "15 años" → "quince años"
+- Version numbers, ports, decimals → as words ("versión dos punto cero", "puerto cuatro mil quinientos", "cero coma cinco segundos")
+- ONLY exception: if the user explicitly asks for the figure ("dame el número exacto"), use digits.
+
+📐 PARAGRAPH STRUCTURE — CRITICAL:
+The user is going to READ YOUR ANSWER OUT LOUD in real time. They need to see where to pause and breathe.
+- For ANY answer longer than ~2 sentences: SPLIT it into 2-4 paragraphs separated by ONE BLANK LINE between them (literal double newline in your output).
+- Each paragraph = one self-contained idea (2-4 sentences).
+- The blank line IS the breath cue. Without it, the user gets lost mid-sentence trying to find the next pause.
+- Single-paragraph replies are only OK for ultra-short answers (multiple choice pick + 1-line reason, yes/no with 1-line justification).
+- NO bullet points, NO numbered lists, NO markdown headers, NO code blocks (unless the question literally asks for code). Pure flowing prose split into breathable paragraphs.
+
 ${langRule}
 
 ${kb}
@@ -586,6 +604,35 @@ chatInput.addEventListener('keydown', (e) => {
 // Atajos globales (recibidos del main)
 phantom.on('shortcut:analyze', () => runAction('resumir'));
 phantom.on('shortcut:answer', () => runAction('responder'));
+
+// Hands-free toggles for the two interview-style mic actions. We click the
+// real buttons (rather than re-invoking the start/stop functions directly)
+// so all the UI side effects — pulsing the button, opening panels, syncing
+// state — happen the same way as a manual click.
+phantom.on('shortcut:interview-toggle', () => {
+  const b = document.getElementById('btn-interview-toggle');
+  if (b) {
+    // If the interview panel is collapsed/hidden, make sure it's expanded
+    // first so the user can see what's going on.
+    const panel = document.getElementById('interview-panel');
+    if (panel && (panel.style.display === 'none' || panel.classList.contains('collapsed'))) {
+      panel.style.display = 'flex';
+      panel.classList.remove('collapsed');
+    }
+    b.click();
+  }
+});
+phantom.on('shortcut:manual-record-toggle', () => {
+  const b = document.getElementById('btn-manual-record');
+  if (b) {
+    const panel = document.getElementById('interview-panel');
+    if (panel && (panel.style.display === 'none' || panel.classList.contains('collapsed'))) {
+      panel.style.display = 'flex';
+      panel.classList.remove('collapsed');
+    }
+    b.click();
+  }
+});
 
 // ─── Translucidez de la ventana ─────────────────────────────────
 const opacitySlider = $('cfg-opacity');
@@ -1747,6 +1794,632 @@ function arrayBufferToBase64(buf) {
   }
   return btoa(binary);
 }
+
+// ═════════════════════════════════════════════════════════════════
+// VOICE INPUT — el usuario pregunta por VOZ y la respuesta entra al
+// chat. Reusa la infra de Deepgram pero captura el MICRÓFONO en vez
+// del audio del sistema (que es lo que usa translate/interview).
+// Fallback: si no hay Deepgram key, graba con MediaRecorder y manda
+// a Whisper en una sola tanda al finalizar.
+//
+// Flujo: click 🎤 → escucha → click otra vez (o silencio largo) →
+// transcripción al input → sendChat() automático.
+// ═════════════════════════════════════════════════════════════════
+const voiceInput = {
+  active: false,
+  stream: null,
+  audioCtx: null,
+  sourceNode: null,
+  processorNode: null,
+  recorder: null,          // MediaRecorder (modo Whisper fallback)
+  recorderChunks: [],
+  transcript: '',          // texto acumulado de la sesión actual
+  useDeepgram: true,
+  autoSend: true           // mandar al chat automático al parar
+};
+
+// ═════════════════════════════════════════════════════════════════
+// CHEAT SHEET — quick-access interview answers, pre-written in spoken
+// English. The user clicks ❓ Preguntas → sees a grid of topics → clicks
+// one → the full script appears in a large, readable area. Designed to
+// be read out loud verbatim during an interview.
+// ═════════════════════════════════════════════════════════════════
+(function setupCheatSheet() {
+  const btnOpen = document.getElementById('btn-cheatsheet');
+  const panel   = document.getElementById('cheatsheet-panel');
+  if (!btnOpen || !panel) return;
+  const btnClose= document.getElementById('cs-close');
+  const search  = document.getElementById('cs-search');
+  const grid    = document.getElementById('cs-grid');
+  const scriptWrap  = document.getElementById('cs-script-wrap');
+  const scriptTitle = document.getElementById('cs-script-title');
+  const scriptBody  = document.getElementById('cs-script-body');
+  const btnBack = document.getElementById('cs-script-back');
+
+  const BUILT_IN = window.CHEATSHEET_TOPICS || [];
+  const USER_STORAGE_KEY = 'phantom_cheatsheet_user_topics_v1';
+
+  // ─── User-added topics (persisted in localStorage so survives restarts) ──
+  function loadUserTopics() {
+    try {
+      const raw = localStorage.getItem(USER_STORAGE_KEY);
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr : [];
+    } catch (_) { return []; }
+  }
+  function saveUserTopics(arr) {
+    try { localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(arr)); }
+    catch (_) {}
+  }
+  function getAllTopics() {
+    return [...BUILT_IN, ...loadUserTopics()];
+  }
+
+  function renderGrid(filter) {
+    const q = (filter || '').trim().toLowerCase();
+    grid.innerHTML = '';
+    const TOPICS = getAllTopics();
+    const matched = TOPICS.filter(tt => {
+      if (!q) return true;
+      if (tt.title.toLowerCase().includes(q)) return true;
+      if (tt.category && tt.category.toLowerCase().includes(q)) return true;
+      if (Array.isArray(tt.keywords) && tt.keywords.some(k => k.toLowerCase().includes(q))) return true;
+      return false;
+    });
+    if (matched.length === 0) {
+      grid.innerHTML = '<div class="cs-empty">No topics match that filter.</div>';
+      return;
+    }
+    // Group by category for visual structure, but order within category matches the data file.
+    const byCat = new Map();
+    for (const tt of matched) {
+      const cat = tt.category || 'Other';
+      if (!byCat.has(cat)) byCat.set(cat, []);
+      byCat.get(cat).push(tt);
+    }
+    for (const [cat, items] of byCat) {
+      const catEl = document.createElement('div');
+      catEl.className = 'cs-cat';
+      catEl.innerHTML = `<div class="cs-cat-label">${cat}</div><div class="cs-cat-row"></div>`;
+      const row = catEl.querySelector('.cs-cat-row');
+      for (const tt of items) {
+        const b = document.createElement('button');
+        b.className = 'cs-pill' + (tt._userAdded ? ' cs-pill-user' : '');
+        b.dataset.id = tt.id;
+        const userMark = tt._userAdded ? '<span class="cs-pill-mark" title="Added by you">●</span>' : '';
+        b.innerHTML = `<span class="cs-pill-icon">${tt.icon || '•'}</span><span class="cs-pill-title">${escapeHTML(tt.title)}</span>${userMark}`;
+        b.addEventListener('click', () => openScript(tt.id));
+        row.appendChild(b);
+      }
+      grid.appendChild(catEl);
+    }
+  }
+
+  function openScript(id) {
+    const tt = getAllTopics().find(x => x.id === id);
+    if (!tt) return;
+    scriptTitle.textContent = (tt.icon ? tt.icon + '  ' : '') + tt.title;
+    // textContent preserves \n\n; CSS gives them the visual paragraph break.
+    scriptBody.textContent = tt.script || '';
+    grid.style.display = 'none';
+    search.style.display = 'none';
+    scriptWrap.style.display = 'block';
+    scriptBody.scrollTop = 0;
+    // Show a "🗑 Delete" button only for user-added topics. Built-in topics
+    // ship with the app and shouldn't be removable from the UI.
+    const oldDel = document.getElementById('cs-script-delete');
+    if (oldDel) oldDel.remove();
+    if (tt._userAdded) {
+      const del = document.createElement('button');
+      del.id = 'cs-script-delete';
+      del.className = 'cs-script-delete';
+      del.textContent = '🗑 Delete';
+      del.title = 'Remove this user-added topic';
+      del.addEventListener('click', () => {
+        if (!confirm(`Delete "${tt.title}" from your cheat sheet?`)) return;
+        const left = loadUserTopics().filter(x => x.id !== tt.id);
+        saveUserTopics(left);
+        closeScript();
+        renderGrid(search.value);
+      });
+      document.querySelector('.cs-script-header').appendChild(del);
+    }
+  }
+
+  function closeScript() {
+    scriptWrap.style.display = 'none';
+    grid.style.display = '';
+    search.style.display = '';
+    search.focus();
+  }
+
+  function openPanel() {
+    panel.style.display = 'block';
+    btnOpen.classList.add('active');
+    renderGrid(search.value);
+    setTimeout(() => search.focus(), 50);
+  }
+  function closePanel() {
+    panel.style.display = 'none';
+    btnOpen.classList.remove('active');
+    closeScript();
+    search.value = '';
+  }
+  function togglePanel() {
+    if (panel.style.display === 'none' || !panel.style.display) openPanel();
+    else closePanel();
+  }
+
+  btnOpen.addEventListener('click', togglePanel);
+  btnClose.addEventListener('click', closePanel);
+  btnBack.addEventListener('click', closeScript);
+  search.addEventListener('input', () => renderGrid(search.value));
+
+  // Escape closes the script view (if open) or the panel (if grid is showing).
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (panel.style.display !== 'block') return;
+    if (scriptWrap.style.display === 'block') closeScript();
+    else closePanel();
+  });
+
+  // ─── Upload doc → AI generates topic in spoken-English style ───────────
+  const btnAdd = document.getElementById('cs-add');
+  const addStatus = document.getElementById('cs-add-status');
+
+  function setAddStatus(msg, kind) {
+    if (!msg) { addStatus.style.display = 'none'; addStatus.textContent = ''; return; }
+    addStatus.style.display = 'block';
+    addStatus.className = 'cs-add-status' + (kind ? ' ' + kind : '');
+    addStatus.textContent = msg;
+  }
+
+  // The system prompt we send to the AI to turn a document into a cheat-sheet
+  // entry. Mirrors the exact style of the hand-written BUILT_IN topics —
+  // conversational English, paragraphs separated by blank lines, numbers as
+  // words, first person, no bullets / headers / code blocks. The model also
+  // picks a title, an emoji icon, a category from a fixed list, and 4-8
+  // keywords for the search filter.
+  const GENERATION_SYSTEM = [
+    'You convert a technical document into a single CHEAT SHEET ENTRY that the user will read OUT LOUD verbatim in an interview. You return STRICT JSON with the schema:',
+    '{ "title": string (max 38 chars, plain words, no emoji),',
+    '  "category": one of ["Retrieval","Frameworks","Data","Databases","Prompting","Agents","Ops","Advanced","Other"],',
+    '  "icon": one emoji,',
+    '  "keywords": string[4..8] (lowercase, single words or short phrases),',
+    '  "script": string (the spoken-English answer, see rules below) }',
+    '',
+    'SCRIPT STYLE — STRICT:',
+    '- Conversational English, first person ("what I do is", "the way I handle that", "in my agents").',
+    '- 3 paragraphs separated by ONE BLANK LINE (a literal double newline \\n\\n). The blank line is the cue for the user to PAUSE and BREATHE while speaking.',
+    '- Each paragraph ≈ 3-5 sentences. Total ≈ 150-260 words.',
+    '- NO bullet points. NO numbered lists. NO markdown headers. NO code blocks. NO tables. Pure flowing prose.',
+    '- NUMBERS AS WORDS — the user is reading aloud and stumbles on digits. "250,000" → "two hundred fifty thousand". "30%" → "thirty percent". "$2.5M" → "two and a half million dollars". "2024" → "twenty twenty-four". "5 min" → "five minutes". Version numbers/ports too.',
+    '- Natural spoken connectors: "basically", "for example", "in practice", "the way I think about it is", "what I appreciate about X is", "the trade-off is".',
+    '- Explain what it is → give a concrete example → say when you would use it and when you would not. Weave the comparison into prose, do not list each side.',
+    '- Use the DOCUMENT below as the source of truth for the technical content, but REWRITE it entirely in the spoken style. Do NOT quote it verbatim. Do NOT mention "the document" or "as described in".',
+    '',
+    'OUTPUT: return ONLY the JSON object, no prose, no markdown fence. The script field must contain real \\n\\n between paragraphs.'
+  ].join('\n');
+
+  function deriveIdFromTitle(title) {
+    return 'user-' + String(title).toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)
+      + '-' + Math.random().toString(36).slice(2, 7);
+  }
+
+  function safeParseJSON(text) {
+    if (!text) return null;
+    // Strip markdown fences if the model added them despite the instruction.
+    const t = String(text).trim()
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```\s*$/, '');
+    try { return JSON.parse(t); } catch (_) {
+      // Last-ditch: find the first {...} block.
+      const m = t.match(/\{[\s\S]*\}/);
+      if (m) { try { return JSON.parse(m[0]); } catch (_) {} }
+      return null;
+    }
+  }
+
+  async function generateFromDoc(filename, text) {
+    // Cap the document at ~30k chars so we don't blow the context window
+    // for very long PDFs. The model gets the head + tail with a marker if
+    // we had to trim; usually plenty for a technical doc.
+    const MAX = 30_000;
+    let docPart = text;
+    if (text.length > MAX) {
+      const half = Math.floor(MAX / 2);
+      docPart = text.slice(0, half) + '\n\n[... middle of document trimmed ...]\n\n' + text.slice(-half);
+    }
+    const userMsg =
+      `Document filename: ${filename}\n\n===== DOCUMENT START =====\n${docPart}\n===== DOCUMENT END =====\n\n` +
+      `Generate the cheat sheet entry following the rules in the system message. Return ONLY the JSON object.`;
+    const resp = await phantom.ai.call({
+      messages: [{ role: 'user', content: userMsg }],
+      system: GENERATION_SYSTEM,
+      maxTokens: 1500
+    });
+    const obj = safeParseJSON(resp.text);
+    if (!obj || !obj.title || !obj.script) {
+      throw new Error('AI did not return valid JSON. Try a different document or retry.');
+    }
+    // Sanitize / fill defaults so a bad model response can't break the grid.
+    return {
+      id: deriveIdFromTitle(obj.title),
+      title: String(obj.title).slice(0, 60),
+      category: ['Retrieval','Frameworks','Data','Databases','Prompting','Agents','Ops','Advanced','Other'].includes(obj.category)
+        ? obj.category : 'Other',
+      icon: (typeof obj.icon === 'string' && obj.icon.length <= 4) ? obj.icon : '📄',
+      keywords: Array.isArray(obj.keywords) ? obj.keywords.slice(0, 10).map(k => String(k).toLowerCase()) : [],
+      script: String(obj.script).trim(),
+      _userAdded: true,
+      _sourceFile: filename,
+      _addedAt: Date.now()
+    };
+  }
+
+  if (btnAdd) {
+    btnAdd.addEventListener('click', async () => {
+      if (btnAdd.disabled) return;
+      btnAdd.disabled = true;
+      setAddStatus('📂 Eligiendo documento(s)…', 'busy');
+      try {
+        const res = await phantom.knowledge.pickDocs();
+        if (!res || res.canceled) { setAddStatus(''); return; }
+        const docs = Array.isArray(res.docs) ? res.docs : [];
+        if (!docs.length) {
+          setAddStatus('⚠ No se pudo extraer texto de ningún archivo.', 'err');
+          return;
+        }
+        const existing = loadUserTopics();
+        let added = 0, failed = 0;
+        for (let i = 0; i < docs.length; i++) {
+          const d = docs[i];
+          setAddStatus(`🧠 Procesando ${i + 1}/${docs.length}: ${d.filename}…`, 'busy');
+          try {
+            const topic = await generateFromDoc(d.filename, d.text);
+            existing.push(topic);
+            added++;
+          } catch (e) {
+            console.error('[cheatsheet] generation failed for', d.filename, e);
+            failed++;
+          }
+        }
+        saveUserTopics(existing);
+        renderGrid(search.value);
+        const parts = [];
+        if (added)  parts.push(`✓ ${added} agregado${added > 1 ? 's' : ''}`);
+        if (failed) parts.push(`⚠ ${failed} falló${failed > 1 ? 'n' : ''}`);
+        setAddStatus(parts.join(' · '), failed ? 'err' : 'ok');
+        setTimeout(() => setAddStatus(''), 6000);
+      } catch (err) {
+        console.error('[cheatsheet] add error', err);
+        setAddStatus('⚠ ' + err.message, 'err');
+      } finally {
+        btnAdd.disabled = false;
+      }
+    });
+  }
+
+  // First render so it's ready when opened.
+  renderGrid('');
+})();
+
+(function setupVoiceInput() {
+  const btn = document.getElementById('btn-mic');
+  const status = document.getElementById('voice-status');
+  const statusText = document.getElementById('voice-status-text');
+  const transcriptEl = document.getElementById('voice-transcript');
+  if (!btn) return;
+
+  function setUI(state, text) {
+    btn.classList.toggle('recording', state === 'rec');
+    btn.textContent = state === 'rec' ? '⏹' : '🎤';
+    btn.title = state === 'rec' ? 'Parar y enviar' : 'Preguntar con tu voz';
+    if (state === 'idle') {
+      status.style.display = 'none';
+      transcriptEl.textContent = '';
+    } else {
+      status.style.display = 'flex';
+      statusText.textContent = text || 'Escuchando…';
+    }
+  }
+  setUI('idle');
+
+  btn.addEventListener('click', () => {
+    if (voiceInput.active) stopVoiceInput(true);
+    else startVoiceInput();
+  });
+
+  // Second trigger: prominent "🎤 Preguntar" button in the always-visible
+  // actions row. Toggles the same recording state, but also makes the chat
+  // wrap visible so the user immediately sees the live transcript line.
+  const askBtn = document.getElementById('btn-voice-ask');
+  if (askBtn) {
+    askBtn.addEventListener('click', () => {
+      if (chatWrap.style.display === 'none' || !chatWrap.style.display) {
+        chatWrap.style.display = 'flex';
+      }
+      if (voiceInput.active) stopVoiceInput(true);
+      else startVoiceInput();
+      askBtn.classList.toggle('recording', voiceInput.active);
+      askBtn.textContent = voiceInput.active ? '⏹ Parar' : '🎤 Preguntar';
+    });
+  }
+
+  async function startVoiceInput() {
+    if (typeof translate !== 'undefined' && translate.active) {
+      setStatus('⚠ Pará primero la traducción para usar el micrófono.', 'err');
+      return;
+    }
+    if (typeof interview !== 'undefined' && interview.active) {
+      setStatus('⚠ Pará primero el modo entrevista para usar el micrófono.', 'err');
+      return;
+    }
+    const cfg = await phantom.config.get();
+    voiceInput.useDeepgram = !!cfg.deepgramKey;
+    if (!voiceInput.useDeepgram && !cfg.openaiKey) {
+      setStatus('⚠ Falta API key de Deepgram u OpenAI en Settings.', 'err');
+      return;
+    }
+
+    // Asegurar que el chat-wrap esté visible (puede estarlo si ya hay mensajes;
+    // si no, lo mostramos para que el usuario vea su pregunta + respuesta).
+    if (chatWrap.style.display === 'none') chatWrap.style.display = '';
+
+    try {
+      voiceInput.stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl:  true,
+          channelCount: 1
+        }
+      });
+    } catch (err) {
+      console.error('voice-input mic error:', err);
+      setStatus('⚠ No se pudo acceder al micrófono: ' + err.message, 'err');
+      return;
+    }
+
+    voiceInput.active = true;
+    voiceInput.transcript = '';
+    transcriptEl.textContent = '';
+    setUI('rec', voiceInput.useDeepgram ? '🎙 Escuchando…' : '🎙 Grabando (Whisper)…');
+
+    if (voiceInput.useDeepgram) {
+      await startDeepgramForMic(cfg);
+    } else {
+      startWhisperForMic();
+    }
+  }
+
+  async function startDeepgramForMic(cfg) {
+    const audioCtx = new AudioContext({ sampleRate: 16000 });
+    voiceInput.audioCtx = audioCtx;
+    const source = audioCtx.createMediaStreamSource(voiceInput.stream);
+    voiceInput.sourceNode = source;
+    const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+    voiceInput.processorNode = processor;
+    processor.onaudioprocess = (ev) => {
+      if (!voiceInput.active) return;
+      const f32 = ev.inputBuffer.getChannelData(0);
+      const i16 = new Int16Array(f32.length);
+      for (let i = 0; i < f32.length; i++) {
+        const s = Math.max(-1, Math.min(1, f32[i]));
+        i16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      }
+      phantom.deepgram.sendAudio(i16.buffer);
+    };
+    source.connect(processor);
+    processor.connect(audioCtx.destination);
+    try {
+      // 'auto' → Deepgram detect_language=true. The user could ask in any
+      // language; we don't want to bias transcription to the UI's idiom.
+      await phantom.deepgram.start({ language: 'auto', sampleRate: 16000 });
+    } catch (err) {
+      console.error('Deepgram start (voice-input) error:', err);
+      setStatus('⚠ ' + err.message, 'err');
+      stopVoiceInput(false);
+    }
+  }
+
+  function startWhisperForMic() {
+    voiceInput.recorderChunks = [];
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus'
+      : (MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : 'audio/webm');
+    try {
+      voiceInput.recorder = new MediaRecorder(voiceInput.stream, { mimeType });
+    } catch (e) {
+      setStatus('⚠ MediaRecorder error: ' + e.message, 'err');
+      stopVoiceInput(false);
+      return;
+    }
+    voiceInput.recorder.ondataavailable = (ev) => {
+      if (ev.data && ev.data.size > 0) voiceInput.recorderChunks.push(ev.data);
+    };
+    voiceInput.recorder.onstop = async () => {
+      if (!voiceInput.recorderChunks.length) return;
+      const blob = new Blob(voiceInput.recorderChunks, { type: mimeType });
+      const buf = await blob.arrayBuffer();
+      const b64 = arrayBufferToBase64(buf);
+      try {
+        statusText.textContent = 'Transcribiendo…';
+        // No language hint → Whisper auto-detects, so the user can speak any tongue.
+        const res = await phantom.translate.transcribe({ audio_base64: b64, mime: mimeType });
+        if (res && res.ok && res.text) {
+          voiceInput.transcript = res.text.trim();
+          deliverTranscript();
+        } else {
+          setStatus('⚠ ' + (res?.error || 'Transcripción vacía'), 'err');
+        }
+      } catch (e) {
+        setStatus('⚠ ' + e.message, 'err');
+      } finally {
+        setUI('idle');
+      }
+    };
+    voiceInput.recorder.start();
+  }
+
+  // Listeners de Deepgram — solo procesamos cuando voiceInput está activo.
+  // Los listeners de translate.js chequean translate.active, así que no chocan.
+  phantom.on('deepgram:interim', (transcript) => {
+    if (!voiceInput.active) return;
+    transcriptEl.textContent = (voiceInput.transcript ? voiceInput.transcript + ' ' : '') + transcript;
+  });
+  phantom.on('deepgram:final', (transcript, speechFinal) => {
+    if (!voiceInput.active) return;
+    if (!transcript || transcript.trim().length < 1) return;
+    voiceInput.transcript = (voiceInput.transcript ? voiceInput.transcript + ' ' : '') + transcript.trim();
+    transcriptEl.textContent = voiceInput.transcript;
+  });
+  phantom.on('deepgram:error', (err) => {
+    if (!voiceInput.active) return;
+    setStatus('⚠ Deepgram: ' + err, 'err');
+  });
+
+  function deliverTranscript() {
+    const text = (voiceInput.transcript || '').trim();
+    if (!text) {
+      setStatus('No se escuchó nada.', 'err');
+      return;
+    }
+    if (voiceInput.autoSend) {
+      // Dedicated voice path: pure Q&A, NO screenshot of the screen behind,
+      // language follows the QUESTION (not the UI), and the user's uploaded
+      // documents (CV / knowledge base) are injected so the model can pull
+      // personal context when relevant.
+      sendVoiceQuestion(text);
+    } else {
+      chatInput.value = text;
+      chatInput.focus();
+    }
+  }
+
+  // Standalone send path used ONLY by the voice button. Lives inside the
+  // setupVoiceInput IIFE so it doesn't leak into the global chat behavior.
+  async function sendVoiceQuestion(text) {
+    if (state.busy) return;
+    state.busy = true;
+
+    if (chatWrap.style.display === 'none' || !chatWrap.style.display) {
+      chatWrap.style.display = 'flex';
+    }
+    addMessage('user', text);
+    const loading = addMessage('assistant', '', true);
+    setStatus(t('status.thinking'), 'busy');
+    state.messages.push({ role: 'user', content: text });
+
+    const kb = (typeof getKnowledgeBaseBlock === 'function') ? getKnowledgeBaseBlock() : '';
+    const system = [
+      'You are answering a SPOKEN question. The user is going to READ YOUR ANSWER OUT LOUD as their own — to a colleague, in a meeting, on a call. So your answer must already BE the speech, ready to recite, in flowing prose.',
+      '',
+      'CRITICAL RULES:',
+      '- NO screenshot exists. Do NOT reference "the screen", "what you see", "the page". Just answer the question.',
+      '- LANGUAGE: detect the language of the user\'s question and reply in THAT SAME language. If they asked in English → English. Spanish → Spanish. French → French. Never default to a language they did not use.',
+      '',
+      'PARAGRAPH STRUCTURE — CRITICAL: The user is going to READ YOUR ANSWER OUT LOUD in real time. They need clear breath points. SPLIT your answer into 2-4 paragraphs separated by ONE BLANK LINE between them (a literal double newline in the output). Each paragraph = one self-contained idea (2-4 sentences). A paragraph break IS the cue for "pause and breathe before the next idea". Never deliver a wall of text, even for short answers.',
+      '',
+      'NUMBERS AS WORDS — CRITICAL: Since the user is reading aloud, write ALL numbers as words in the answer\'s language. The user CANNOT pronounce digits like "250,000" or "$2.5M" smoothly while speaking — they stumble.',
+      '- "250,000" → "doscientos cincuenta mil" / "two hundred fifty thousand"',
+      '- "$2.5M" → "dos millones y medio de dólares" / "two and a half million dollars"',
+      '- "30%" → "treinta por ciento" / "thirty percent"',
+      '- "2024" → "dos mil veinticuatro" / "twenty twenty-four"',
+      '- "3x faster" → "tres veces más rápido" / "three times faster"',
+      '- Version numbers, ports, codes → also as words ("versión dos punto cero", "puerto cuatro mil quinientos")',
+      '- ONLY exception: if the user explicitly asks for the digit form ("dame el número exacto", "give me the figure"), then use digits.',
+      '',
+      'STYLE — write the way a person actually TALKS when they\'re explaining something they understand well:',
+      '- Pure flowing prose. NO bullet points. NO numbered lists. NO markdown headers. NO tables. NO code blocks (unless they literally asked for code).',
+      '- Use natural spoken connectors: "por ejemplo", "es decir", "o sea", "en cambio", "por otro lado", "mientras que", "supongamos que", "imaginate", "fijate", "lo bueno de X es que…", "la diferencia está en…", "yo lo usaría cuando…". (English equivalents: "for example", "that is", "I mean", "whereas", "on the other hand", "imagine", "let\'s say", "the thing about X is…", "the difference is…", "I\'d use it when…")',
+      '- When comparing two things: weave the comparison into one explanation, don\'t list each side separately. Say WHAT each one is, FOR WHAT case each serves, and IN WHICH situation you\'d pick one over the other — all in the same paragraph, conversationally.',
+      '- After defining a concept, immediately follow with a concrete example using real-world stuff (not abstract code). Then say when you\'d use it and when you wouldn\'t.',
+      '- Length: enough to fully explain the answer as if speaking to a smart friend who doesn\'t know the topic. Usually 4-10 sentences flowing. Not too short ("just a definition") and not an essay.',
+      '- First person when relevant — "yo lo usaría", "me conviene", "armaría así…". Speak with confidence and ownership.',
+      '- If the question is a comparison/difference: ALWAYS structure as → "The difference is direct but each one serves a different purpose. X is [what it is], for example [concrete case], and you use it when [scenario]. Y in contrast is [what it is], it serves for [other case], and you go for it when [other scenario]."',
+      '- Use the personal documents below when relevant — incorporate naturally in first person, as YOUR knowledge. Never say "according to your CV" or "the document says".',
+      '',
+      'TONE EXAMPLE (Spanish, comparison question — THIS IS THE TARGET FEEL):',
+      'Q: "diferencia entre base de datos común y vectorial"',
+      'A:',
+      '"La diferencia es directa pero cada una sirve para un caso distinto. Una base de datos común te sirve cuando los datos son estructurados — texto, números, fechas, relaciones entre tablas — por ejemplo guardar usuarios, productos, transacciones, todo lo que consultás con condiciones exactas tipo \'dame los usuarios mayores de 25 años\'. Postgres, MySQL, esas son comunes y son rápidas para queries de ese estilo.',
+      '',
+      'En cambio, una base de datos vectorial está pensada para almacenar embeddings, que son listas largas de números que representan el significado de algo: un texto, una imagen, un audio. Lo que cambia es la búsqueda: en vez de buscar por igualdad, buscás por similitud — \'dame los 10 documentos más parecidos a este\'. Ahí es donde una Pinecone, una pgvector o una Weaviate brillan, porque ese tipo de query lo hacen en milisegundos sobre millones de vectores.',
+      '',
+      'Yo elegiría la común para datos transaccionales clásicos, y la vectorial cuando el caso es semántico, tipo búsqueda inteligente, recomendaciones, o un RAG."',
+      '',
+      '↑ Notice the THREE paragraphs separated by blank lines. That\'s the target structure for EVERY answer.',
+      '',
+      kb || '(No personal documents attached.)',
+      '',
+      SECURITY_RULE
+    ].join('\n');
+
+    try {
+      const resp = await phantom.ai.call({
+        messages: state.messages.slice(),
+        system
+      });
+      const phishing = detectPhishing(resp.text);
+      const reply = stripPhishingMarker(resp.text);
+      loading.classList.remove('loading');
+      loading.innerHTML = renderMarkdown(reply);
+      state.messages.push({ role: 'assistant', content: reply });
+      if (phishing) setDanger(true);
+      setStatus(phishing ? t('status.phishing_detected') : t('status.done'), phishing ? 'err' : 'ok');
+    } catch (err) {
+      loading.classList.remove('loading');
+      loading.innerHTML = '<em style="color:#dc2626">' + escapeHTML(err.message) + '</em>';
+      setStatus('⚠ ' + err.message, 'err');
+      state.messages.pop();
+    } finally {
+      state.busy = false;
+    }
+  }
+
+  async function stopVoiceInput(deliver) {
+    if (!voiceInput.active) return;
+    voiceInput.active = false;
+    setUI('idle');
+
+    // Modo Deepgram: cortar audio context + WS
+    if (voiceInput.processorNode) {
+      try { voiceInput.processorNode.disconnect(); } catch {}
+      voiceInput.processorNode.onaudioprocess = null;
+      voiceInput.processorNode = null;
+    }
+    if (voiceInput.sourceNode) {
+      try { voiceInput.sourceNode.disconnect(); } catch {}
+      voiceInput.sourceNode = null;
+    }
+    if (voiceInput.audioCtx) {
+      try { voiceInput.audioCtx.close(); } catch {}
+      voiceInput.audioCtx = null;
+    }
+    if (voiceInput.useDeepgram) {
+      try { await phantom.deepgram.stop(); } catch {}
+    }
+
+    // Modo Whisper: parar recorder (su onstop se encarga de transcribir + entregar)
+    if (voiceInput.recorder && voiceInput.recorder.state !== 'inactive') {
+      try { voiceInput.recorder.stop(); } catch {}
+      // El delivery se hace dentro del onstop después de Whisper.
+    } else if (deliver) {
+      // Deepgram: entregamos lo acumulado.
+      deliverTranscript();
+    }
+
+    if (voiceInput.stream) {
+      voiceInput.stream.getTracks().forEach(t => t.stop());
+      voiceInput.stream = null;
+    }
+    voiceInput.recorder = null;
+    voiceInput.recorderChunks = [];
+  }
+})();
 
 // ─── Interview Mode (escuchar al entrevistador + responder como vos) ──
 const interview = {
@@ -5251,5 +5924,142 @@ RULES:
   // Re-render badges every time the playbook body is updated (mutation observer).
   if (bodyEl) {
     new MutationObserver(() => renderFiredBadges()).observe(bodyEl, { childList: true });
+  }
+})();
+
+// ════════════════════════════════════════════════════════════════
+// KEYBOARD SHORTCUTS
+//
+// Goal: every main action is reachable from the keyboard, and every
+// button advertises its combo as a <kbd> badge (rendered in CSS via
+// data-kbd → ::after / ::before).
+//
+// Two tiers, per the "mixed" model:
+//   • global:true  → the combo is registered system-wide in main.js and
+//                    works even when Phantom is NOT focused. Here we only
+//                    paint the badge; the key itself is delivered straight
+//                    to the main process by the OS.
+//   • otherwise    → handled in-app below (active while Phantom is focused).
+//                    We call the real button's .click() so every existing
+//                    side-effect (panels opening, state syncing, pulsing)
+//                    runs exactly like a manual click.
+//   • displayOnly  → the key is owned by another handler (Enter sends the
+//                    chat, Escape cancels/closes) — badge only, no wiring.
+// ════════════════════════════════════════════════════════════════
+(function setupKeyboardShortcuts() {
+  // KeyboardEvent.code keeps matching layout- and Shift-proof.
+  const SHORTCUTS = [
+    // ── Header (icon buttons: corner chip shows the letter) ──────────
+    { id: 'btn-watcher', code: 'KeyW', meta: 1, shift: 1, badge: '⌘⇧W', icon: 'W' },
+    { id: 'opacity',     code: 'KeyO', meta: 1, shift: 1, badge: '⌘⇧O', icon: 'O', global: 1 },
+    { id: 'settings',    code: 'KeyS', meta: 1, shift: 1, badge: '⌘⇧S', icon: 'S' },
+    { id: 'hide',        code: 'KeyH', meta: 1, shift: 1, badge: '⌘⇧H', icon: 'H', global: 1 },
+    { id: 'close',       code: 'KeyX', meta: 1, shift: 1, badge: '⌘⇧X', icon: 'X' },
+
+    // ── Main action row ──────────────────────────────────────────────
+    { id: 'btn-read',          code: 'KeyR', meta: 1, shift: 1, badge: '⌘⇧R', global: 1 },
+    { id: 'btn-answer',        code: 'KeyA', meta: 1, shift: 1, badge: '⌘⇧A', global: 1 },
+    { id: 'btn-voice-ask',     code: 'KeyV', meta: 1, shift: 1, badge: '⌘⇧V' },
+    { id: 'btn-cheatsheet',    code: 'KeyC', meta: 1, shift: 1, badge: '⌘⇧C' },
+    { id: 'btn-multi-capture', code: 'KeyM', meta: 1, shift: 1, badge: '⌘⇧M', global: 1 },
+
+    // ── Chat ─────────────────────────────────────────────────────────
+    { id: 'btn-clear', code: 'KeyN',  meta: 1, shift: 1, badge: '⌘⇧N' },
+    { id: 'btn-mic',   code: 'KeyJ',  meta: 1, shift: 1, badge: '⌘⇧J' },
+    { id: 'btn-send',  code: 'Enter', displayOnly: 1, badge: '↵' },
+
+    // ── Multi-capture panel ──────────────────────────────────────────
+    { id: 'btn-mc-add',    code: 'KeyM',  meta: 1, shift: 1, badge: '⌘⇧M', global: 1 },
+    { id: 'btn-mc-send',   code: 'Enter', meta: 1, shift: 1, badge: '⌘⇧↵' },
+    { id: 'btn-mc-cancel', code: 'Escape', displayOnly: 1, badge: 'esc' },
+
+    // ── Interview panel ──────────────────────────────────────────────
+    { id: 'btn-interview-toggle',     code: 'KeyI', meta: 1, shift: 1, badge: '⌘⇧I', global: 1 },
+    { id: 'btn-manual-record',        code: 'KeyG', meta: 1, shift: 1, badge: '⌘⇧G', global: 1 },
+    { id: 'btn-interview-regenerate', code: 'KeyZ', meta: 1, shift: 1, badge: '⌘⇧Z' },
+    { id: 'btn-manual-discard',       code: 'KeyD', meta: 1, shift: 1, badge: '⌘⇧D' },
+    { id: 'btn-manual-answer',        code: 'KeyB', meta: 1, shift: 1, badge: '⌘⇧B' },
+
+    // ── Translate panel ──────────────────────────────────────────────
+    { id: 'btn-translate-toggle', code: 'KeyT', meta: 1, shift: 1, badge: '⌘⇧T' },
+
+    // ── Trading panel (top controls) ─────────────────────────────────
+    { id: 'btn-trading-playbook', code: 'KeyP', meta: 1, shift: 1, badge: '⌘⇧P' },
+    { id: 'btn-trading-popout',   code: 'KeyU', meta: 1, shift: 1, badge: '⌘⇧U' },
+    { id: 'btn-trading-analyze',  code: 'KeyY', meta: 1, shift: 1, badge: '⌘⇧Y' },
+  ];
+
+  const isVisible = (el) => !!(el && el.offsetParent !== null);
+
+  // ── Paint the badges (data-kbd → CSS pseudo-element) ─────────────
+  function paintBadges() {
+    for (const s of SHORTCUTS) {
+      const el = document.getElementById(s.id);
+      if (!el) continue;
+      // Icon buttons show only the key letter in the corner chip; text
+      // buttons show the full combo inline.
+      el.setAttribute('data-kbd', s.icon ? s.icon : s.badge);
+    }
+  }
+
+  // Header icon buttons carry the full combo in their hover tooltip
+  // (data-tip). i18n rewrites data-tip on every language switch, so we
+  // re-append after each applyTranslations() run (wrapped below).
+  function decorateTooltips() {
+    for (const s of SHORTCUTS) {
+      if (!s.icon) continue;
+      const el = document.getElementById(s.id);
+      if (!el) continue;
+      const base = (el.getAttribute('data-tip') || '').replace(/\s*·\s*[⌘⇧⌥][^·]*$/, '').trim();
+      el.setAttribute('data-tip', (base ? base + ' · ' : '') + s.badge);
+    }
+  }
+
+  // ── In-app combo handler ─────────────────────────────────────────
+  function onKey(e) {
+    // Never hijack keys while typing in a field — keep native editing
+    // (redo, paste-and-match, newline) intact.
+    const tgt = e.target;
+    if (tgt && (tgt.isContentEditable ||
+        /^(INPUT|TEXTAREA|SELECT)$/.test(tgt.tagName || ''))) return;
+
+    for (const s of SHORTCUTS) {
+      if (s.global || s.displayOnly) continue;   // handled elsewhere
+      if (e.code !== s.code) continue;
+      if (!!s.meta !== e.metaKey) continue;
+      if (!!s.shift !== e.shiftKey) continue;
+      if (e.altKey || e.ctrlKey) continue;
+      const el = document.getElementById(s.id);
+      if (!isVisible(el)) continue;              // don't fire hidden actions
+      e.preventDefault();
+      el.click();
+      return;
+    }
+  }
+
+  // Escape → cancel multi-capture when that panel is open. (The cheat-sheet
+  // and watcher-mode already have their own Escape handlers.)
+  function onEscape(e) {
+    if (e.key !== 'Escape') return;
+    const panel = document.getElementById('multi-capture-panel');
+    const cancel = document.getElementById('btn-mc-cancel');
+    if (panel && panel.style.display !== 'none' && isVisible(cancel)) {
+      e.preventDefault();
+      cancel.click();
+    }
+  }
+
+  paintBadges();
+  decorateTooltips();
+  document.addEventListener('keydown', onKey);
+  document.addEventListener('keydown', onEscape);
+
+  // Keep tooltips correct across language switches. applyTranslations is a
+  // classic-script global (i18n.js); wrapping the global binding also
+  // updates the reference setLanguage() calls internally.
+  if (typeof applyTranslations === 'function') {
+    const _applyTranslations = applyTranslations;
+    // eslint-disable-next-line no-global-assign
+    applyTranslations = function () { _applyTranslations.apply(this, arguments); decorateTooltips(); };
   }
 })();

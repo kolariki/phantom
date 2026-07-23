@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="UTF-8"/>
+<style>
+  * { margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #131722; }
+  #chart { width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<div id="chart"></div>
+<script src="https://s3.tradingview.com/tv.js"></script>
+<script>
+  const params = new URLSearchParams(window.location.search);
+  const symbol = params.get('symbol') || 'BINANCE:BTCUSDT';
+  const interval = params.get('interval') || '60';
+  const indicatorsParam = (params.get('indicators') || 'rsi,macd,bollinger,ema20,ema50,volume').toLowerCase();
+
+  const INDICATOR_MAP = {
+    rsi:        'RSI@tv-basicstudies',
+    macd:       'MACD@tv-basicstudies',
+    bollinger:  'BB@tv-basicstudies',
+    ema20:      'MAExp@tv-basicstudies',
+    ema50:      'MAExp@tv-basicstudies',
+    ema200:     'MAExp@tv-basicstudies',
+    sma50:      'MASimple@tv-basicstudies',
+    sma200:     'MASimple@tv-basicstudies',
+    vwap:       'VWAP@tv-basicstudies',
+    stoch:      'Stochastic@tv-basicstudies',
+    atr:        'ATR@tv-basicstudies',
+    adx:        'DMI@tv-basicstudies',
+    dmi:        'DMI@tv-basicstudies',
+    volume:     'Volume@tv-basicstudies',
+    ichimoku:   'IchimokuCloud@tv-basicstudies',
+    psar:       'PSAR@tv-basicstudies',
+    cci:        'CCI@tv-basicstudies',
+    mfi:        'MF@tv-basicstudies',
+    williams:   'WilliamR@tv-basicstudies',
+    obv:        'OBV@tv-basicstudies',
+    roc:        'ROC@tv-basicstudies',
+    cmf:        'chaikinMF@tv-basicstudies',
+    keltner:    'KltChannel@tv-basicstudies',
+    donchian:   'DonchainChannels@tv-basicstudies',
+    pivots:     'PivotPointsStandard@tv-basicstudies',
+    trix:       'TRIX@tv-basicstudies'
+  };
+
+  // Each indicator belongs to a category. We pick the best one per category
+  // (in priority order) to avoid redundancy and visual noise.
+  // "Menos es más" — 5-6 complementary signals beat 15 overlapping ones.
+  const CATEGORIES = {
+    trend_ma:     ['ema50', 'ema200', 'sma50', 'sma200', 'ema20'],       // 1 trend MA
+    momentum:     ['rsi', 'stoch', 'mfi', 'cci', 'williams', 'roc'],     // 1 oscillator
+    trend_mom:    ['macd', 'trix'],                                       // 1 momentum-trend hybrid
+    volatility:   ['bollinger', 'keltner', 'donchian', 'atr'],            // 1 volatility band
+    volume:       ['volume', 'obv', 'cmf'],                               // 1 volume
+    strength:     ['adx', 'dmi'],                                         // 1 trend strength
+    overlay:      ['vwap', 'psar', 'ichimoku', 'pivots']                  // 1 price overlay
+  };
+
+  const requested = new Set(indicatorsParam.split(',').map(s => s.trim()).filter(Boolean));
+  const picked = [];
+
+  // For each category, pick the FIRST (highest priority) requested indicator.
+  for (const cat of Object.keys(CATEGORIES)) {
+    for (const id of CATEGORIES[cat]) {
+      if (requested.has(id) && INDICATOR_MAP[id]) {
+        picked.push(id);
+        break; // only 1 per category
+      }
+    }
+  }
+
+  // Build the actual study list, deduping by TV ID (e.g. emaX all map to MAExp).
+  const studies = [];
+  const renderedIds = [];
+  const seenTV = new Set();
+  for (const id of picked) {
+    const tv = INDICATOR_MAP[id];
+    if (!tv || seenTV.has(tv)) continue;
+    seenTV.add(tv);
+    studies.push(tv);
+    renderedIds.push(id);
+    if (studies.length >= 6) break;
+  }
+
+  // Sensible default if nothing was requested or matched.
+  if (studies.length === 0) {
+    studies.push('RSI@tv-basicstudies', 'MACD@tv-basicstudies', 'BB@tv-basicstudies', 'Volume@tv-basicstudies');
+    renderedIds.push('rsi', 'macd', 'bollinger', 'volume');
+  }
+
+  new TradingView.widget({
+    container_id: 'chart',
+    autosize: true,
+    symbol: symbol,
+    interval: interval,
+    timezone: 'Etc/UTC',
+    theme: 'dark',
+    style: '1',
+    locale: 'en',
+    toolbar_bg: '#131722',
+    enable_publishing: false,
+    hide_top_toolbar: false,
+    hide_side_toolbar: false,
+    allow_symbol_change: false,
+    save_image: false,
+    hide_volume: false,
+    studies: studies,
+    loading_screen: { backgroundColor: '#131722' }
+  });
+
+  window._chartReady = false;
+  window._renderedIndicators = renderedIds;
+  setTimeout(() => { window._chartReady = true; }, 8000);
+</script>
+</body>
+</html>

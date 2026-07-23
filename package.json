@@ -1,12 +1,14 @@
 {
   "name": "phantom-desktop",
-  "version": "1.2.0",
+  "version": "1.4.0",
   "description": "Phantom — copiloto IA invisible para macOS. Lee tu pantalla, contesta y se oculta del screen-share.",
   "main": "main.js",
   "author": "Elevum",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "build:mac": "electron-builder --mac --arm64 --x64",
     "build:mac-dmg": "electron-builder --mac dmg",
     "build:dev": "SKIP_NOTARIZE=true electron-builder --mac dmg",
@@ -14,7 +16,8 @@
   },
   "devDependencies": {
     "electron": "^32.0.0",
-    "electron-builder": "^25.0.0"
+    "electron-builder": "^25.0.0",
+    "vitest": "^2.1.9"
   },
   "build": {
     "appId": "com.elevum.phantom",
@@ -22,6 +25,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "lib/**/*",
       "renderer/**/*",
       "assets/**/*"
     ],
