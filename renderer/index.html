@@ -14,6 +14,7 @@
         <span class="title">Phantom</span>
       </div>
       <div class="header-actions">
+        <button class="icon-btn" id="btn-open-translator" data-tip="Traducción en vivo en ventana aparte">🌐</button>
         <button class="icon-btn" id="btn-watcher" data-i18n-title="watcher.toggle" data-tip="Modo vigilante: solo trading en vivo">👁</button>
         <button class="icon-btn" id="opacity" data-i18n-title="header.opacity_tooltip">◐</button>
         <button class="icon-btn" id="settings" data-i18n-title="header.settings_tooltip">⚙</button>
@@ -30,6 +31,7 @@
         <button class="btn btn-primary" id="btn-read" data-i18n="nav.read_screen" data-i18n-help="help.read_screen">📄 Leer pantalla</button>
         <button class="btn btn-secondary" id="btn-answer" data-i18n="nav.answer" data-i18n-help="help.answer">💡 Contestar</button>
         <button class="btn btn-secondary" id="btn-voice-ask" data-i18n="voice.ask" data-i18n-help="voice.ask_help" data-i18n-title="voice.mic_title" title="Preguntar con tu voz">🎤 Preguntar</button>
+        <button class="btn btn-secondary" id="btn-challenge" title="Challenge: captura el ejercicio en pantalla y te da solución + plan + qué decir mientras codeás">🧩 Challenge</button>
         <button class="btn btn-secondary" id="btn-cheatsheet" title="Cheat sheet: respuestas listas para recitar">❓ Preguntas</button>
         <button class="btn btn-secondary" id="btn-multi-capture" data-i18n="nav.multi_capture" data-i18n-help="help.multi_capture">📸 Captura múltiple</button>
       </div>
@@ -70,6 +72,7 @@
         <div style="display:flex;gap:8px;">
           <button class="btn btn-secondary btn-mini" id="btn-mc-add" data-i18n-help="help.multi_add" style="flex:1;">+ Agregar captura</button>
           <button class="btn btn-primary btn-mini" id="btn-mc-send" data-i18n-help="help.multi_send" style="flex:1;" disabled>Enviar (0)</button>
+          <button class="btn btn-primary btn-mini" id="btn-mc-send-challenge" title="Enviar todas las capturas como un challenge: solución + plan + qué decir" style="flex:1;background:linear-gradient(135deg,#7c3aed,#a855f7);" disabled>🧩 Challenge</button>
         </div>
       </div>
 
@@ -79,6 +82,7 @@
           <span class="interview-title" data-i18n="interview.title">🎓 Modo Entrevista</span>
           <div class="interview-controls">
             <span class="interview-status" id="interview-status">●</span>
+            <button class="btn btn-mini" id="btn-teleprompter" title="Teleprompter: escucha la llamada y muestra la respuesta en grande, manos libres">📺</button>
             <button class="btn btn-mini" id="btn-interview-toggle" data-i18n="interview.auto" data-i18n-title="interview.auto_tooltip">Auto</button>
             <button class="btn btn-mini btn-record" id="btn-manual-record" data-i18n="interview.record" data-i18n-title="interview.record_tooltip">🔴 Grabar</button>
           </div>
@@ -634,6 +638,47 @@
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- ─── Teleprompter overlay — manos libres sobre el modo entrevista.
+       Escucha la llamada, y cuando llega una respuesta la muestra en grande
+       con auto-scroll a velocidad de lectura. ─── -->
+  <div id="teleprompter" class="teleprompter" style="display:none;">
+    <div class="tp-topbar">
+      <span class="tp-status" id="tp-status">● escuchando…</span>
+      <button class="tp-close" id="tp-close" title="Salir (esc)">×</button>
+    </div>
+    <div class="tp-question" id="tp-question">Esperando la primera pregunta…</div>
+    <div class="tp-scroll" id="tp-scroll">
+      <div class="tp-text" id="tp-text"></div>
+    </div>
+    <div class="tp-hint">
+      <span><b>enter</b>&nbsp;=&nbsp;contestar&nbsp;ya</span>
+      <span>a&nbsp;=&nbsp;<b id="tp-auto">auto</b></span>
+      <span>m&nbsp;=&nbsp;apuntes/lectura</span>
+      <span>espacio&nbsp;=&nbsp;pausa</span>
+      <span>↑/↓&nbsp;=&nbsp;<b id="tp-wpm">140</b>&nbsp;ppm</span>
+      <span>esc&nbsp;=&nbsp;salir</span>
+    </div>
+  </div>
+
+  <!-- ─── Traductor en vivo — ventana propia (?view=translator).
+       Traduce mientras la persona habla, con gpt-realtime-translate. ─── -->
+  <div id="xlate-view" class="xlate-view" style="display:none;">
+    <div class="xl-topbar">
+      <span class="xl-status" id="xl-status">● detenido</span>
+      <span class="xl-lang" id="xl-lang">EN → ES</span>
+      <span class="xl-spacer"></span>
+      <button class="xl-btn" id="xl-toggle">Iniciar</button>
+      <button class="xl-btn xl-close" id="xl-close" title="Cerrar">×</button>
+    </div>
+    <div class="xl-body" id="xl-body">
+      <div class="xl-empty" id="xl-empty">
+        Tocá <b>Iniciar</b> y la traducción aparece acá mientras hablan.
+      </div>
+      <div class="xl-lines" id="xl-lines"></div>
+    </div>
+    <div class="xl-source-bar" id="xl-source-bar" title="Lo que se está escuchando"></div>
   </div>
 
   <script src="i18n.js"></script>

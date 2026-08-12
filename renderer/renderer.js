@@ -100,6 +100,34 @@ ${langRule}
 
 ${SECURITY_RULE}`;
   }
+
+  if (action === 'challenge') {
+    return `You are a live-interview CHALLENGE COPILOT. The screenshot shows a technical challenge the user must solve RIGHT NOW in front of an interviewer (coding exercise, SQL scenario, system design, algorithm, or QA scenario). The user will type the solution THEMSELVES while thinking aloud — your job is to hand them everything on a silver platter, structured so they can glance and act.
+
+Reply with EXACTLY this structure (keep the emoji headers):
+
+🎯 **THE ASK** — one sentence: what they're really testing (the underlying concept, not the surface task).
+
+🧭 **APPROACH** — 2-3 sentences: the strategy to take and WHY it beats the alternatives. Interviewers grade the "why" — give the user the justification to say out loud.
+
+📝 **PLAN** — numbered steps in build order (what to write first, second…). Short lines. This is the user's roadmap while typing.
+
+💻 **SOLUTION** — the complete, clean, working code in the language visible on screen (or the obvious one for the stack). Good naming, brief comments on the non-obvious lines only. If SQL: the full query + one line on what each clause does. If system design: the component list + data flow in text-diagram form instead of code.
+
+🗣️ **SAY WHILE CODING** — 3-4 short first-person English lines the user can say naturally while typing ("I'll start with the edge cases so the happy path stays clean…", "I'm choosing a map here for O(1) lookups…"). These make the user sound senior.
+
+⚠️ **WATCH OUT** — edge cases, the complexity (big-O) if relevant, and the ONE follow-up question the interviewer will most likely ask next, with a one-line answer.
+
+Rules:
+- Optimize for SPEED OF READING: the user is on camera and shares their screen elsewhere — short lines, scannable.
+- Working code over clever code. No over-engineering: solve exactly what's asked, mention extensions only in WATCH OUT.
+- If the challenge statement is partially visible/cut off, solve what's visible and add one line noting what to confirm with the interviewer.
+- If the user adds constraints in the follow-up chat ("in Python", "they want it recursive", "now optimize it"), obey them and regenerate only what changes.
+
+${langRule}
+
+${SECURITY_RULE}`;
+  }
   const kb = getKnowledgeBaseBlock();
   return `You are answering the question or solving the problem visible in the screenshot, AS IF YOU WERE THE USER.
 Give the direct answer/response — NOT instructions about the UI or "click here, then there".
@@ -168,7 +196,16 @@ function getUserPrompt(action) {
       responder: '查看屏幕，直接给我可见问题的答案（或问题的解决方案），就像你是我在回答一样。不要描述按钮或如何导航。'
     }
   };
-  return (prompts[uiLang] || prompts.es)[action];
+  // 'challenge' aplica a todos los idiomas — la estructura de la respuesta la
+  // fija el system prompt; acá solo va la instrucción base (con fallback a es).
+  if (action === 'challenge') {
+    const challengePrompts = {
+      es: 'En pantalla hay un challenge técnico de entrevista en vivo. Resolvelo completo y dame la guía estructurada para escribirlo yo mismo.',
+      en: 'The screen shows a live technical interview challenge. Solve it fully and give me the structured guide to write it myself.'
+    };
+    return challengePrompts[uiLang] || challengePrompts.en;
+  }
+  return (prompts[uiLang] || prompts.es)[action] || (prompts.es[action] || prompts.es.responder);
 }
 
 // ─── Init ────────────────────────────────────────────────────────
@@ -240,6 +277,13 @@ function getUserPrompt(action) {
 // ─── Listeners UI ────────────────────────────────────────────────
 $('btn-read').addEventListener('click', () => runAction('resumir'));
 $('btn-answer').addEventListener('click', () => runAction('responder'));
+$('btn-challenge').addEventListener('click', () => runAction('challenge'));
+// El traductor vive en su propia ventana: se mira a la vez que el
+// teleprompter, no en lugar de él.
+const btnOpenXlate = document.getElementById('btn-open-translator');
+if (btnOpenXlate) {
+  btnOpenXlate.addEventListener('click', () => phantom.window.openTranslator());
+}
 
 // ─── 📸 Modo Multi-captura ───────────────────────────────────────────
 // Permite tomar varias screenshots (mientras el user scrollea o cambia de
@@ -259,6 +303,8 @@ function mcRender() {
   mcCounter.textContent = `${n} captura${n === 1 ? '' : 's'}`;
   mcBtnSend.textContent = `Enviar (${n})`;
   mcBtnSend.disabled = n === 0 || state.busy;
+  const mcCh = document.getElementById('btn-mc-send-challenge');
+  if (mcCh) mcCh.disabled = n === 0 || state.busy;
   mcThumbs.innerHTML = '';
   state.multiCaptures.forEach((dataUrl, i) => {
     const wrap = document.createElement('div');
@@ -316,26 +362,28 @@ async function mcAddOne() {
   mcRender();
 }
 
-async function mcSend() {
+async function mcSend(mode) {
   if (state.busy || state.multiCaptures.length === 0) return;
+  // 'responder' (default) o 'challenge' — el botón 🧩 del panel manda challenge
+  const action = mode === 'challenge' ? 'challenge' : 'responder';
   state.busy = true;
   mcRender();
 
   // Limpiar conversación previa para mostrar la nueva sesión
-  state.mode = 'responder';
+  state.mode = action;
   state.messages = [];
   conversationEl.innerHTML = '';
   setDanger(false);
 
   const n = state.multiCaptures.length;
   setStatus(`Enviando ${n} captura${n === 1 ? '' : 's'}…`, 'busy');
-  addMessage('user', t('msg.user_answer') + ` (${n} capturas)`);
+  addMessage('user', (action === 'challenge' ? '🧩 Challenge' : t('msg.user_answer')) + ` (${n} capturas)`);
   const loading = addMessage('assistant', '', true);
 
   try {
     const cfg = await phantom.config.get();
-    const userPrompt = getUserPrompt('responder');
-    const system = getSystemPrompt('responder');
+    const userPrompt = getUserPrompt(action);
+    const system = getSystemPrompt(action);
 
     // Construir content[] con TODAS las imágenes + el texto del prompt al final
     const content = [];
@@ -349,10 +397,14 @@ async function mcSend() {
     }
     content.push({
       type: 'text',
-      text:
-        `${userPrompt}\n\nNOTA: te mando ${n} capturas de pantalla en orden (1 → ${n}) ` +
-        `porque el contenido tenía scroll y no entraba en una sola imagen. ` +
-        `Considerá todas las imágenes como una sola página/vista cuando respondas.`
+      text: action === 'challenge'
+        ? `${userPrompt}\n\nNOTE: I'm sending ${n} screenshots in order (1 → ${n}). ` +
+          `They can be different parts of the same challenge: the scrolled statement, ` +
+          `different files of the codebase, the terminal, or the existing code to modify. ` +
+          `Treat them as ONE challenge context and solve it end to end.`
+        : `${userPrompt}\n\nNOTA: te mando ${n} capturas de pantalla en orden (1 → ${n}) ` +
+          `porque el contenido tenía scroll y no entraba en una sola imagen. ` +
+          `Considerá todas las imágenes como una sola página/vista cuando respondas.`
     });
 
     const messages = [{ role: 'user', content }];
@@ -386,8 +438,10 @@ async function mcSend() {
 
 mcBtnStart.addEventListener('click', mcStart);
 mcBtnAdd.addEventListener('click', mcAddOne);
-mcBtnSend.addEventListener('click', mcSend);
+mcBtnSend.addEventListener('click', () => mcSend('responder'));
 mcBtnCancel.addEventListener('click', mcCancel);
+const mcBtnSendChallenge = document.getElementById('btn-mc-send-challenge');
+if (mcBtnSendChallenge) mcBtnSendChallenge.addEventListener('click', () => mcSend('challenge'));
 // Shortcut: Cmd+Shift+M agrega una captura al modo activo
 phantom.on('shortcut:multi-capture-add', () => {
   if (!state.multiMode) mcStart();
@@ -2422,6 +2476,12 @@ const voiceInput = {
 })();
 
 // ─── Interview Mode (escuchar al entrevistador + responder como vos) ──
+// Emisor de eventos del ciclo de entrevista. El teleprompter (y cualquier
+// otra vista) se suscribe acá en vez de tocar las funciones del ciclo.
+function interviewEmit(kind, detail = {}) {
+  document.dispatchEvent(new CustomEvent('phantom:interview', { detail: { kind, ...detail } }));
+}
+
 const interview = {
   active: false,
   stream: null,
@@ -2429,6 +2489,17 @@ const interview = {
   cycleTimer: null,
   silenceTimer: null,
   CHUNK_MS: 2500,
+  // Ciclos de silencio consecutivos antes de dar la pregunta por terminada.
+  // 2 × CHUNK_MS ≈ 5s: alcanza para que el entrevistador piense a mitad de
+  // frase sin que le cortemos la pregunta al medio.
+  SILENCE_CHUNKS: 2,
+  // Si vuelve a hablar dentro de esta ventana tras una respuesta, era
+  // continuación de la misma pregunta, no una nueva.
+  CONTINUATION_MS: 15000,
+  silentChunks: 0,
+  autoAnswer: true,          // false = sólo contesta con Enter (manual)
+  lastAnsweredAt: 0,
+  lastAnsweredQuestion: '',
   buffer: '',                // texto acumulado de transcripciones
   lastTranscriptionAt: 0,
   history: [],               // [{q, a}] — contexto de Q&A previas en la sesión
@@ -2504,6 +2575,9 @@ async function startInterview() {
     interview.active = true;
     interview.buffer = '';
     interview.history = [];
+    interview.silentChunks = 0;
+    interview.lastAnsweredAt = 0;
+    interview.lastAnsweredQuestion = '';
     interview.lastTranscriptionAt = Date.now();
     btnInterview.textContent = 'Detener';
     interviewStatusEl.classList.add('live');
@@ -2512,6 +2586,7 @@ async function startInterview() {
     interviewAnswerEl.classList.add('pending');
     btnRegenerate.style.display = 'none';
     setStatus('Modo entrevista activo. Escuchando…', 'ok');
+    interviewEmit('start');
 
     runInterviewCycle();
   } catch (err) {
@@ -2525,6 +2600,7 @@ function stopInterview() {
   interview.active = false;
   btnInterview.textContent = 'Iniciar';
   interviewStatusEl.classList.remove('live');
+  interviewEmit('stop');
 
   if (interview.recorder && interview.recorder.state !== 'inactive') {
     try { interview.recorder.stop(); } catch {}
@@ -2572,6 +2648,7 @@ async function runInterviewCycle() {
       interview.buffer = (interview.buffer + ' ' + piece).trim();
       interview.lastTranscriptionAt = Date.now();
       interviewQuestionEl.textContent = '🎙️ ' + interview.buffer.slice(-200);
+      interviewEmit('hearing', { text: interview.buffer });
       checkBufferForQuestion(false);
     } catch (err) {
       console.error('Whisper interview:', err);
@@ -2590,18 +2667,58 @@ async function runInterviewCycle() {
 //  - Hubo silencio (último chunk vacío + buffer no vacío)
 //  - El buffer pasa los 25 segundos (timeout duro)
 function checkBufferForQuestion(silenceDetected) {
+  // Contar silencios CONSECUTIVOS. Un solo chunk vacío (2.5s) no alcanza:
+  // el entrevistador piensa a mitad de frase todo el tiempo, y cortarlo ahí
+  // hacía que Phantom contestara media pregunta y después tratara el resto
+  // ("gracias, podés contestar") como si fuera una pregunta nueva.
+  if (silenceDetected) interview.silentChunks++;
+  else interview.silentChunks = 0;
+
+  // Modo manual: no dispara solo, espera que apretes Enter.
+  if (!interview.autoAnswer) return;
+
   const buf = interview.buffer.trim();
   if (!buf || buf.length < 5) return;
 
-  const endsWithQ = /[?¿]\s*$/.test(buf);
-  const endsWithPunct = /[.!?]\s*$/.test(buf);
+  const enoughSilence = interview.silentChunks >= interview.SILENCE_CHUNKS;
   const tooLong = buf.length > 600;
 
-  if (endsWithQ || (silenceDetected && (endsWithPunct || buf.length > 30)) || tooLong) {
-    const question = buf;
-    interview.buffer = ''; // reset para próxima pregunta
-    answerInterviewQuestion(question);
-  }
+  // Ojo: NO se dispara por terminar en "?". Una pregunta puede tener varios
+  // signos antes de estar completa ("¿cómo lo harías? o sea, en producción…").
+  // El único disparador real es el silencio sostenido.
+  if (enoughSilence || tooLong) answerNow();
+}
+
+/**
+ * Contesta con TODO lo escuchado hasta ahora. Lo llama el ciclo automático
+ * (tras silencio sostenido) y también el Enter manual del teleprompter.
+ */
+function answerNow() {
+  const buf = interview.buffer.trim();
+  if (!buf || buf.length < 3) return;
+
+  interview.buffer = '';
+  interview.silentChunks = 0;
+
+  // Si acaba de contestar y el otro siguió hablando, era la MISMA pregunta
+  // partida en dos por una pausa: se recontesta el conjunto en vez de
+  // responder sólo el fragmento nuevo, que aislado no significa nada.
+  const now = Date.now();
+  const isContinuation =
+    interview.lastAnsweredQuestion &&
+    (now - interview.lastAnsweredAt) < interview.CONTINUATION_MS;
+
+  const question = isContinuation
+    ? `${interview.lastAnsweredQuestion} ${buf}`
+    : buf;
+
+  // La respuesta anterior queda obsoleta: sale del contexto que se le manda
+  // al modelo para que no vea la pregunta partida dos veces.
+  if (isContinuation) interview.history.pop();
+
+  interview.lastAnsweredAt = now;
+  interview.lastAnsweredQuestion = question;
+  answerInterviewQuestion(question);
 }
 
 async function answerInterviewQuestion(question) {
@@ -2610,11 +2727,15 @@ async function answerInterviewQuestion(question) {
   interviewAnswerEl.classList.add('pending');
   interviewAnswerEl.innerHTML = '<span class="dots"><span></span><span></span><span></span></span>';
   btnRegenerate.style.display = 'none';
+  interviewEmit('question', { question });
 
   try {
     const resp = await phantom.interview.answer({
       question,
-      conversationContext: interview.history
+      conversationContext: interview.history,
+      // El teleprompter (cámara encendida) pide tarjetas de apuntes en vez de
+      // párrafos: mirar de reojo y parafrasear no delata, leer de corrido sí.
+      style: window.__phantomTpStyle || undefined
     });
     const answer = (resp.text || '').trim();
 
@@ -2624,9 +2745,11 @@ async function answerInterviewQuestion(question) {
 
     interview.history.push({ q: question, a: answer });
     addInterviewHistoryItem(question, answer);
+    interviewEmit('answer', { question, answer });
   } catch (err) {
     interviewAnswerEl.classList.remove('pending');
     interviewAnswerEl.innerHTML = '<span style="color:#dc2626;">⚠ ' + escapeHTML(err.message) + '</span>';
+    interviewEmit('error', { message: err.message });
   }
 }
 
@@ -5950,6 +6073,7 @@ RULES:
   // KeyboardEvent.code keeps matching layout- and Shift-proof.
   const SHORTCUTS = [
     // ── Header (icon buttons: corner chip shows the letter) ──────────
+    { id: 'btn-open-translator', code: 'KeyL', meta: 1, shift: 1, badge: '⌘⇧L', icon: 'L' },
     { id: 'btn-watcher', code: 'KeyW', meta: 1, shift: 1, badge: '⌘⇧W', icon: 'W' },
     { id: 'opacity',     code: 'KeyO', meta: 1, shift: 1, badge: '⌘⇧O', icon: 'O', global: 1 },
     { id: 'settings',    code: 'KeyS', meta: 1, shift: 1, badge: '⌘⇧S', icon: 'S' },
@@ -5960,6 +6084,7 @@ RULES:
     { id: 'btn-read',          code: 'KeyR', meta: 1, shift: 1, badge: '⌘⇧R', global: 1 },
     { id: 'btn-answer',        code: 'KeyA', meta: 1, shift: 1, badge: '⌘⇧A', global: 1 },
     { id: 'btn-voice-ask',     code: 'KeyV', meta: 1, shift: 1, badge: '⌘⇧V' },
+    { id: 'btn-challenge',     code: 'KeyE', meta: 1, shift: 1, badge: '⌘⇧E' },
     { id: 'btn-cheatsheet',    code: 'KeyC', meta: 1, shift: 1, badge: '⌘⇧C' },
     { id: 'btn-multi-capture', code: 'KeyM', meta: 1, shift: 1, badge: '⌘⇧M', global: 1 },
 
@@ -5974,6 +6099,7 @@ RULES:
     { id: 'btn-mc-cancel', code: 'Escape', displayOnly: 1, badge: 'esc' },
 
     // ── Interview panel ──────────────────────────────────────────────
+    { id: 'btn-teleprompter',         code: 'KeyK', meta: 1, shift: 1, badge: '⌘⇧K' },
     { id: 'btn-interview-toggle',     code: 'KeyI', meta: 1, shift: 1, badge: '⌘⇧I', global: 1 },
     { id: 'btn-manual-record',        code: 'KeyG', meta: 1, shift: 1, badge: '⌘⇧G', global: 1 },
     { id: 'btn-interview-regenerate', code: 'KeyZ', meta: 1, shift: 1, badge: '⌘⇧Z' },
@@ -6062,4 +6188,404 @@ RULES:
     // eslint-disable-next-line no-global-assign
     applyTranslations = function () { _applyTranslations.apply(this, arguments); decorateTooltips(); };
   }
+})();
+
+// ════════════════════════════════════════════════════════════════
+// TELEPROMPTER — capa manos libres sobre el modo entrevista.
+//
+// Al abrirlo arranca (si hace falta) el modo entrevista Auto, que ya
+// escucha el audio del sistema, detecta preguntas y genera respuestas
+// sin intervención. Este módulo solo se suscribe a los eventos
+// 'phantom:interview' y presenta todo en una vista de lectura:
+//   • texto grande de alto contraste
+//   • auto-scroll a velocidad de lectura (palabras por minuto)
+//   • espacio pausa/reanuda, ↑/↓ ajustan velocidad, esc sale
+// ════════════════════════════════════════════════════════════════
+(function setupTeleprompter() {
+  const overlay  = document.getElementById('teleprompter');
+  if (!overlay) return;
+  const btnOpen  = document.getElementById('btn-teleprompter');
+  const btnClose = document.getElementById('tp-close');
+  const statusEl = document.getElementById('tp-status');
+  const questionEl = document.getElementById('tp-question');
+  const scrollEl = document.getElementById('tp-scroll');
+  const textEl   = document.getElementById('tp-text');
+  const wpmEl    = document.getElementById('tp-wpm');
+  const autoEl   = document.getElementById('tp-auto');
+
+  const WPM_KEY = 'phantom_tp_wpm';
+  const CUE_KEY = 'phantom_tp_cue';
+  const tp = {
+    open: false,
+    paused: false,
+    // Modo cue card (default): viñetas cortas para mirar de reojo con cámara
+    // encendida. Con 'm' se alterna a respuesta completa para leer de corrido.
+    cue: localStorage.getItem(CUE_KEY) !== '0',
+    wpm: parseInt(localStorage.getItem(WPM_KEY), 10) || 140,
+    raf: null,
+    pxPerMs: 0,
+    lastTs: 0,
+    startDelayUntil: 0,
+    scrollPos: 0            // acumulador en float — scrollTop redondea
+  };
+  tp.wpm = Math.min(400, Math.max(60, tp.wpm));
+  wpmEl.textContent = tp.wpm;
+
+  // answerInterviewQuestion lee esta global para pedir el estilo del momento.
+  function syncTpStyle() {
+    window.__phantomTpStyle = tp.open && tp.cue ? 'cue' : undefined;
+    textEl.classList.toggle('cue', tp.open && tp.cue);
+  }
+
+  function setTpStatus(text, cls) {
+    statusEl.textContent = text;
+    statusEl.className = 'tp-status' + (cls ? ' ' + cls : '');
+  }
+
+  // ── Auto-scroll a ritmo de lectura ─────────────────────────────
+  // La velocidad sale de: (alto scrolleable) / (palabras / ppm).
+  // Así el final del texto llega justo cuando terminarías de leerlo.
+  function computeSpeed() {
+    const distance = scrollEl.scrollHeight - scrollEl.clientHeight;
+    const words = (textEl.textContent.trim().match(/\S+/g) || []).length;
+    if (distance <= 0 || words === 0) { tp.pxPerMs = 0; return; }
+    const durationMs = (words / tp.wpm) * 60000;
+    tp.pxPerMs = distance / durationMs;
+  }
+
+  function tick(ts) {
+    if (!tp.open) return;
+    if (!tp.lastTs) tp.lastTs = ts;
+    const dt = ts - tp.lastTs;
+    tp.lastTs = ts;
+    if (!tp.paused && tp.pxPerMs > 0 && ts > tp.startDelayUntil) {
+      tp.scrollPos = Math.min(tp.scrollPos + tp.pxPerMs * dt, scrollEl.scrollHeight - scrollEl.clientHeight);
+      scrollEl.scrollTop = tp.scrollPos;
+    }
+    tp.raf = requestAnimationFrame(tick);
+  }
+
+  function startScrolling() {
+    tp.scrollPos = 0;
+    scrollEl.scrollTop = 0;
+    computeSpeed();
+    // Colchón inicial: ~1.2s para que empieces a leer antes de que avance
+    tp.startDelayUntil = performance.now() + 1200;
+  }
+
+  // ── Presentación de estados del ciclo de entrevista ────────────
+  function showPending(msg) {
+    textEl.classList.add('pending');
+    textEl.textContent = msg;
+    tp.pxPerMs = 0;
+  }
+
+  document.addEventListener('phantom:interview', (e) => {
+    if (!tp.open) return;
+    const d = e.detail;
+    if (d.kind === 'start') {
+      setTpStatus('● escuchando…', 'live');
+    } else if (d.kind === 'hearing') {
+      setTpStatus('● escuchando…', 'live');
+      questionEl.textContent = '🎙️ ' + d.text.slice(-160);
+    } else if (d.kind === 'question') {
+      setTpStatus('● pensando…', 'thinking');
+      questionEl.textContent = d.question;
+      showPending('Preparando tu respuesta…');
+    } else if (d.kind === 'answer') {
+      setTpStatus('● leé — sigo escuchando', 'live');
+      textEl.classList.remove('pending');
+      textEl.textContent = d.answer;
+      tp.paused = false;
+      overlay.classList.remove('paused');
+      startScrolling();
+    } else if (d.kind === 'error') {
+      setTpStatus('● error', 'err');
+      showPending('⚠ ' + d.message);
+    } else if (d.kind === 'stop') {
+      setTpStatus('● detenido', '');
+    }
+  });
+
+  // ── Abrir / cerrar ─────────────────────────────────────────────
+  async function openTeleprompter() {
+    tp.open = true;
+    tp.paused = false;
+    syncTpStyle();
+    overlay.style.display = 'flex';
+    overlay.classList.remove('paused');
+    questionEl.textContent = 'Esperando la primera pregunta…';
+    showPending('Cuando la otra persona pregunte algo, la respuesta aparece acá sola.');
+    try { await phantom.window.resize({ width: 760, height: 900 }); } catch {}
+
+    if (typeof interview !== 'undefined' && !interview.active) {
+      // Reusar el click del botón real para heredar TODAS las validaciones
+      // (keys, CV cargado) y efectos de UI del modo Auto.
+      const b = document.getElementById('btn-interview-toggle');
+      if (b) b.click();
+      setTpStatus('● iniciando escucha…', 'thinking');
+    } else {
+      setTpStatus('● escuchando…', 'live');
+    }
+    tp.lastTs = 0;
+    tp.raf = requestAnimationFrame(tick);
+  }
+
+  function closeTeleprompter() {
+    tp.open = false;
+    syncTpStyle();
+    overlay.style.display = 'none';
+    if (tp.raf) { cancelAnimationFrame(tp.raf); tp.raf = null; }
+    // La escucha sigue activa a propósito: el panel entrevista clásico
+    // queda funcionando. Se corta desde su botón "Detener" (⌘⇧I).
+    try { phantom.window.resize({ width: 640, height: 780 }); } catch {}
+  }
+
+  btnOpen.addEventListener('click', () => (tp.open ? closeTeleprompter() : openTeleprompter()));
+  btnClose.addEventListener('click', closeTeleprompter);
+
+  // ── Scroll manual con la rueda / trackpad ──────────────────────
+  // El auto-scroll pisa scrollTop en cada frame, así que sin esto la rueda
+  // no hace nada: scrolleás y el RAF te devuelve al instante. Cuando el
+  // usuario scrollea, el control pasa a ser suyo — se pausa el avance y se
+  // sincroniza la posición para que al reanudar siga desde donde quedó.
+  scrollEl.addEventListener('wheel', () => {
+    if (!tp.open) return;
+    tp.scrollPos = scrollEl.scrollTop;
+    if (!tp.paused) {
+      tp.paused = true;
+      overlay.classList.add('paused');
+      setTpStatus('⏸ scroll manual — espacio para reanudar', 'thinking');
+    }
+  }, { passive: true });
+
+  // Mientras está pausado, seguir el scroll del usuario (teclas de flecha del
+  // navegador, arrastre, etc.) para no saltar al reanudar.
+  scrollEl.addEventListener('scroll', () => {
+    if (tp.open && tp.paused) tp.scrollPos = scrollEl.scrollTop;
+  }, { passive: true });
+
+  // ── Teclas del modo lectura (solo con el overlay visible) ──────
+  document.addEventListener('keydown', (e) => {
+    if (!tp.open) return;
+    const tgt = e.target;
+    if (tgt && /^(INPUT|TEXTAREA|SELECT)$/.test(tgt.tagName || '')) return;
+
+    if (e.code === 'Enter' || e.code === 'NumpadEnter') {
+      // Contestar YA con todo lo escuchado hasta este momento. Es el control
+      // manual: vos decidís cuándo terminó de hablar, no el detector.
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof interview !== 'undefined' && interview.active) {
+        if (interview.buffer.trim().length >= 3) {
+          setTpStatus('● pensando…', 'thinking');
+          answerNow();
+        } else {
+          setTpStatus('● nada nuevo escuchado todavía', '');
+        }
+      }
+    } else if (e.code === 'KeyA' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      // Auto ↔ manual. En manual no contesta solo: sólo con Enter.
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof interview !== 'undefined') {
+        interview.autoAnswer = !interview.autoAnswer;
+        autoEl.textContent = interview.autoAnswer ? 'auto' : 'manual';
+        setTpStatus(
+          interview.autoAnswer
+            ? '● auto — contesta tras el silencio'
+            : '● manual — contesta sólo con Enter',
+          'thinking'
+        );
+      }
+    } else if (e.code === 'Space') {
+      e.preventDefault();
+      e.stopPropagation();
+      tp.paused = !tp.paused;
+      overlay.classList.toggle('paused', tp.paused);
+      if (tp.paused) setTpStatus('⏸ pausado — espacio para seguir', 'thinking');
+      else setTpStatus('● leé — sigo escuchando', 'live');
+    } else if (e.code === 'ArrowUp' || e.code === 'ArrowDown') {
+      e.preventDefault();
+      e.stopPropagation();
+      tp.wpm = Math.min(400, Math.max(60, tp.wpm + (e.code === 'ArrowUp' ? 10 : -10)));
+      localStorage.setItem(WPM_KEY, String(tp.wpm));
+      wpmEl.textContent = tp.wpm;
+      computeSpeed();
+    } else if (e.code === 'KeyM' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      // Alternar cue card ↔ respuesta completa. Si hay una pregunta en vuelo
+      // o contestada, la regenera en el estilo nuevo al toque.
+      e.preventDefault();
+      e.stopPropagation();
+      tp.cue = !tp.cue;
+      localStorage.setItem(CUE_KEY, tp.cue ? '1' : '0');
+      syncTpStyle();
+      setTpStatus(tp.cue ? '● modo apuntes (cue)' : '● modo lectura completa', 'thinking');
+      if (typeof interview !== 'undefined' && interview.lastQuestion) {
+        answerInterviewQuestion(interview.lastQuestion);
+      }
+    } else if (e.code === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeTeleprompter();
+    }
+  }, true);  // capture: gana antes que los Escape de otros paneles
+})();
+
+// ════════════════════════════════════════════════════════════════
+// TRADUCTOR EN VIVO — vista propia (?view=translator)
+//
+// Usa gpt-realtime-translate: el modelo traduce mientras la persona
+// habla. El pipeline viejo (Deepgram → texto → llamada de traducción)
+// no podía mostrar nada hasta que la frase cerraba, porque traducir a
+// mitad de oración con un modelo de texto da resultados incoherentes.
+// Acá el texto llega por deltas, así que aparece a medida que hablan.
+//
+// El audio va a 24 kHz PCM16, que es lo que el modelo espera. El
+// silencio entre frases también se manda: es lo que le marca dónde
+// termina una idea.
+// ════════════════════════════════════════════════════════════════
+(function setupTranslatorView() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('view') !== 'translator') return;
+
+  document.body.classList.add('translator-view');
+  const view = document.getElementById('xlate-view');
+  if (!view) return;
+  view.style.display = 'flex';
+
+  const statusEl = document.getElementById('xl-status');
+  const langEl   = document.getElementById('xl-lang');
+  const btnTgl   = document.getElementById('xl-toggle');
+  const btnClose = document.getElementById('xl-close');
+  const bodyEl   = document.getElementById('xl-body');
+  const emptyEl  = document.getElementById('xl-empty');
+  const linesEl  = document.getElementById('xl-lines');
+  const srcBar   = document.getElementById('xl-source-bar');
+
+  const SAMPLE_RATE = 24000;
+  const xl = {
+    active: false,
+    stream: null,
+    audioCtx: null,
+    processor: null,
+    sourceNode: null,
+    currentLine: null,   // <div> de la frase que se está traduciendo
+    srcBuffer: ''
+  };
+
+  function setXlStatus(text, cls) {
+    statusEl.textContent = text;
+    statusEl.className = 'xl-status' + (cls ? ' ' + cls : '');
+  }
+
+  // ── Render de deltas ──────────────────────────────────────────
+  function appendTranslated(delta) {
+    if (emptyEl) emptyEl.style.display = 'none';
+    if (!xl.currentLine) {
+      // Marcar la anterior como pasada antes de abrir la nueva.
+      const prev = linesEl.lastElementChild;
+      if (prev) prev.classList.remove('current');
+      xl.currentLine = document.createElement('div');
+      xl.currentLine.className = 'xl-line current';
+      linesEl.appendChild(xl.currentLine);
+    }
+    xl.currentLine.textContent += delta;
+    // Seguir el final del texto: lo último dicho siempre a la vista.
+    bodyEl.scrollTop = bodyEl.scrollHeight;
+  }
+
+  function closeLine() {
+    xl.currentLine = null;   // el próximo delta abre una frase nueva
+  }
+
+  phantom.on('xlate:text', appendTranslated);
+  phantom.on('xlate:text-done', closeLine);
+
+  phantom.on('xlate:source', (delta) => {
+    xl.srcBuffer = (xl.srcBuffer + delta).slice(-300);
+    srcBar.textContent = xl.srcBuffer;
+  });
+  phantom.on('xlate:source-done', () => { xl.srcBuffer = ''; });
+
+  phantom.on('xlate:error', (msg) => {
+    setXlStatus('● ' + msg, 'err');
+  });
+
+  // ── Captura de audio ──────────────────────────────────────────
+  async function start() {
+    try {
+      setXlStatus('● conectando…', '');
+      const cfg = await phantom.config.get();
+      const to = cfg.translateTo || 'es';
+      const from = (cfg.translateFrom || 'auto').toUpperCase();
+      langEl.textContent = `${from === 'AUTO' ? 'AUTO' : from} → ${to.toUpperCase()}`;
+
+      xl.stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { width: 1, height: 1 },
+        audio: true
+      });
+      xl.stream.getVideoTracks().forEach((t) => t.stop());
+      if (xl.stream.getAudioTracks().length === 0) {
+        throw new Error('No se obtuvo audio del sistema. ¿Aceptaste compartir audio?');
+      }
+
+      await phantom.xlate.start({ to });
+
+      const audioCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
+      xl.audioCtx = audioCtx;
+      const source = audioCtx.createMediaStreamSource(
+        new MediaStream(xl.stream.getAudioTracks())
+      );
+      xl.sourceNode = source;
+
+      const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+      xl.processor = processor;
+      processor.onaudioprocess = (ev) => {
+        if (!xl.active) return;
+        const float32 = ev.inputBuffer.getChannelData(0);
+        const int16 = new Int16Array(float32.length);
+        for (let i = 0; i < float32.length; i++) {
+          const s = Math.max(-1, Math.min(1, float32[i]));
+          int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+        }
+        phantom.xlate.sendAudio(arrayBufferToBase64(int16.buffer));
+      };
+      source.connect(processor);
+      processor.connect(audioCtx.destination);
+
+      xl.active = true;
+      btnTgl.textContent = 'Detener';
+      btnTgl.classList.add('active');
+      setXlStatus('● traduciendo en vivo', 'live');
+    } catch (err) {
+      console.error('translator start:', err);
+      setXlStatus('● ' + err.message, 'err');
+      await stop();
+    }
+  }
+
+  async function stop() {
+    xl.active = false;
+    btnTgl.textContent = 'Iniciar';
+    btnTgl.classList.remove('active');
+
+    if (xl.processor) { try { xl.processor.disconnect(); } catch {} xl.processor = null; }
+    if (xl.sourceNode) { try { xl.sourceNode.disconnect(); } catch {} xl.sourceNode = null; }
+    if (xl.audioCtx) { try { await xl.audioCtx.close(); } catch {} xl.audioCtx = null; }
+    if (xl.stream) { xl.stream.getTracks().forEach((t) => t.stop()); xl.stream = null; }
+
+    try { await phantom.xlate.stop(); } catch {}
+    closeLine();
+    setXlStatus('● detenido', '');
+  }
+
+  btnTgl.addEventListener('click', () => (xl.active ? stop() : start()));
+  btnClose.addEventListener('click', async () => {
+    await stop();
+    phantom.window.closeTranslator();
+  });
+
+  // Limpiar el stream si cierran la ventana desde el sistema.
+  window.addEventListener('beforeunload', () => { if (xl.active) stop(); });
 })();

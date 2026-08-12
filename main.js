@@ -229,8 +229,71 @@ ipcMain.handle('window:open-trading', () => {
   return { ok: true, opened: true };
 });
 
+// ─── Ventana del traductor en vivo ───────────────────────────────
+// Va separada del teleprompter a propósito: son dos cosas distintas
+// mirándose al mismo tiempo — una traduce lo que dicen, la otra te dice
+// qué contestar — y meterlas en la misma ventana obliga a elegir.
+let translatorWindow = null;
+
+ipcMain.handle('window:open-translator', () => {
+  if (translatorWindow && !translatorWindow.isDestroyed()) {
+    translatorWindow.show();
+    translatorWindow.focus();
+    return { ok: true, focused: true };
+  }
+
+  const { workArea } = screen.getPrimaryDisplay();
+  const winWidth = Math.min(680, workArea.width - 40);
+  const winHeight = Math.min(420, workArea.height - 40);
+
+  translatorWindow = new BrowserWindow({
+    width: winWidth,
+    height: winHeight,
+    // Abajo a la derecha: fuera del camino del teleprompter, que se ubica
+    // arriba, cerca de la cámara.
+    x: workArea.x + workArea.width - winWidth - 20,
+    y: workArea.y + workArea.height - winHeight - 20,
+    minWidth: 420,
+    minHeight: 240,
+    title: 'Phantom — Traducción en vivo',
+    frame: false,
+    transparent: false,
+    backgroundColor: '#0b1220',
+    alwaysOnTop: true,
+    show: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true
+    }
+  });
+
+  // Misma invisibilidad que la ventana principal: si esto apareciera en la
+  // pantalla compartida, todo el resto no serviría de nada.
+  const cfg = loadConfig();
+  translatorWindow.setContentProtection(cfg.stealth !== false);
+  translatorWindow.setAlwaysOnTop(true, 'floating');
+  translatorWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+  translatorWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'), {
+    query: { view: 'translator' }
+  });
+  translatorWindow.on('closed', () => { translatorWindow = null; });
+  return { ok: true, opened: true };
+});
+
+ipcMain.handle('window:close-translator', () => {
+  if (translatorWindow && !translatorWindow.isDestroyed()) translatorWindow.close();
+  translatorWindow = null;
+  return { ok: true };
+});
+
 ipcMain.handle('window:set-content-protection', (_e, on) => {
   if (mainWindow) mainWindow.setContentProtection(!!on);
+  if (translatorWindow && !translatorWindow.isDestroyed()) {
+    translatorWindow.setContentProtection(!!on);
+  }
 });
 
 ipcMain.handle('window:set-opacity', (_e, value) => {
@@ -587,6 +650,126 @@ ipcMain.handle('deepgram:stop', async () => {
       dgSocket.close();
     } catch {}
     dgSocket = null;
+  }
+  return { stopped: true };
+});
+
+// ─── TRADUCCIÓN EN VIVO (OpenAI Realtime) ─────────────────────────
+// gpt-realtime-translate traduce mientras la persona habla, en vez de
+// transcribir-esperar-traducir. Eso saca un salto completo del camino
+// crítico: el viejo pipeline (Deepgram → texto → llamada de traducción)
+// no podía entregar nada hasta cerrar la frase.
+//
+// El socket vive acá, en el main, por dos razones: el WebSocket del
+// navegador no permite mandar el header Authorization, y así la API key
+// nunca baja al renderer.
+let xlateSocket = null;
+
+ipcMain.handle('xlate:start', async (_e, { to }) => {
+  const cfg = loadConfig();
+  const apiKey = cfg.openaiKey || (cfg.provider === 'openai' ? cfg.apiKey : '');
+  if (!apiKey) throw new Error('Falta la OpenAI key en settings (traducción en vivo).');
+
+  if (xlateSocket) {
+    try { xlateSocket.close(); } catch {}
+    xlateSocket = null;
+  }
+
+  const target = to || cfg.translateTo || 'es';
+  const url = 'wss://api.openai.com/v1/realtime/translations?model=gpt-realtime-translate';
+
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(url, {
+      headers: { Authorization: `Bearer ${apiKey}` }
+    });
+    xlateSocket = ws;
+
+    const timeout = setTimeout(() => {
+      try { ws.close(); } catch {}
+      reject(new Error('Timeout conectando a la traducción en vivo (10s)'));
+    }, 10000);
+
+    ws.on('open', () => {
+      clearTimeout(timeout);
+      ws.send(JSON.stringify({
+        type: 'session.update',
+        session: { audio: { output: { language: target } } }
+      }));
+      mainLog.info(`xlate: conectado, idioma destino ${target}`);
+      resolve({ ok: true, language: target });
+    });
+
+    ws.on('message', (raw) => {
+      let msg;
+      try { msg = JSON.parse(raw.toString()); } catch { return; }
+      const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
+      if (!win) return;
+
+      // Deltas incrementales: el texto llega mientras la persona sigue
+      // hablando, que es lo que hace que se sienta en vivo.
+      if (msg.type === 'session.output_transcript.delta' && msg.delta) {
+        for (const w of BrowserWindow.getAllWindows()) {
+          if (!w.isDestroyed()) w.webContents.send('xlate:text', msg.delta);
+        }
+      } else if (msg.type === 'session.input_transcript.delta' && msg.delta) {
+        for (const w of BrowserWindow.getAllWindows()) {
+          if (!w.isDestroyed()) w.webContents.send('xlate:source', msg.delta);
+        }
+      } else if (msg.type === 'session.output_transcript.done' ||
+                 msg.type === 'session.input_transcript.done') {
+        // Fin de frase: el renderer cierra el párrafo y abre uno nuevo.
+        const channel = msg.type.startsWith('session.output')
+          ? 'xlate:text-done'
+          : 'xlate:source-done';
+        for (const w of BrowserWindow.getAllWindows()) {
+          if (!w.isDestroyed()) w.webContents.send(channel);
+        }
+      } else if (msg.type === 'error' || msg.error) {
+        const detail = msg.error?.message || 'error desconocido';
+        mainLog.warn('xlate error: ' + detail);
+        for (const w of BrowserWindow.getAllWindows()) {
+          if (!w.isDestroyed()) w.webContents.send('xlate:error', detail);
+        }
+      }
+    });
+
+    ws.on('error', (err) => {
+      clearTimeout(timeout);
+      mainLog.warn('xlate WS error: ' + err.message);
+      for (const w of BrowserWindow.getAllWindows()) {
+        if (!w.isDestroyed()) w.webContents.send('xlate:error', err.message);
+      }
+      reject(err);
+    });
+
+    ws.on('close', (code) => {
+      mainLog.info('xlate WS cerrado: ' + code);
+      if (xlateSocket === ws) xlateSocket = null;
+    });
+  });
+});
+
+// El audio va como PCM16 base64 a 24 kHz — el formato que espera el modelo.
+// Se manda también el silencio entre frases: el modelo lo usa para saber
+// dónde termina una idea, y sin eso las traducciones se encadenan.
+ipcMain.on('xlate:audio', (_e, base64pcm) => {
+  if (xlateSocket && xlateSocket.readyState === WebSocket.OPEN) {
+    xlateSocket.send(JSON.stringify({
+      type: 'session.input_audio_buffer.append',
+      audio: base64pcm
+    }));
+  }
+});
+
+ipcMain.handle('xlate:stop', async () => {
+  if (xlateSocket) {
+    try {
+      if (xlateSocket.readyState === WebSocket.OPEN) {
+        xlateSocket.send(JSON.stringify({ type: 'session.close' }));
+      }
+      xlateSocket.close();
+    } catch {}
+    xlateSocket = null;
   }
   return { stopped: true };
 });
@@ -1253,7 +1436,7 @@ ipcMain.handle('trading:sendAlert', async (_e, payload) => {
 // ─── INTERVIEW MODE: contestar como el usuario ──────────────────
 // Recibe la pregunta detectada y devuelve la respuesta como si fuera el usuario,
 // usando el CV/contexto guardados en la config.
-ipcMain.handle('interview:answer', async (_e, { question, conversationContext }) => {
+ipcMain.handle('interview:answer', async (_e, { question, conversationContext, style }) => {
   if (!question || !question.trim()) return { text: '' };
   const cfg = loadConfig();
   if (!cfg.apiKey) throw new Error('Falta API key del proveedor principal.');
@@ -1284,14 +1467,29 @@ ipcMain.handle('interview:answer', async (_e, { question, conversationContext })
     kbBlock = lines.join('\n');
   }
 
-  // Estilos: concise (corto), detailed (medio), complete (completo de entrevista)
+  // Estilos: concise (corto), detailed (medio), complete (completo de entrevista),
+  // cue (tarjetas de apuntes para cámara encendida — el user NO lee de corrido,
+  // mira de reojo y expande con sus propias palabras)
   const styleMap = {
     concise:  'CONCISE: 1-2 sentences max. Direct and punchy. Single paragraph.',
     detailed: 'DETAILED: 3-5 sentences split into 2 paragraphs separated by a blank line. First paragraph: the direct answer + key point. Second paragraph: a concrete supporting detail or example.',
-    complete: 'COMPLETE: 4-8 sentences forming 2-3 well-structured paragraphs, EACH SEPARATED BY A BLANK LINE (double newline). Paragraph 1: the direct answer + the core idea. Paragraph 2: a concrete example or experience from the CV. Paragraph 3: the impact, learning, or conclusion. Sound thoughtful but natural.'
+    complete: 'COMPLETE: 4-8 sentences forming 2-3 well-structured paragraphs, EACH SEPARATED BY A BLANK LINE (double newline). Paragraph 1: the direct answer + the core idea. Paragraph 2: a concrete example or experience from the CV. Paragraph 3: the impact, learning, or conclusion. Sound thoughtful but natural.',
+    cue: `BRIEFING CARD — the user is ON CAMERA. They glance at the card and speak in their own words, so it must be scannable — but COMPLETE: everything they need to answer AND survive two rounds of follow-ups. Structure, in this order:
+- Line 1: "▸" + the ANGLE (≤10 words): which story/claim to lead with.
+- "✔" lines: WHERE they ACTUALLY did this, from the CV/knowledge base: project + one-phrase what (e.g. "✔ Mutor — exactly-once tool dispatcher, prod"). One line per relevant project (up to three). If they did NOT do exactly this, be honest: "✖ not directly — closest:" + the closest thing they DID build. Never fabricate experience.
+- "SAY:" + two to three short first-person sentences they can literally open with (numbers as words). This is the launchpad; the bullets below are the expansion.
+- Then 6-8 bullets "•" (≤12 words each): concrete anchors from the CV/knowledge base — real architecture decisions, patterns, tools, failure modes, trade-offs, the WHY behind each choice. Specifics over generic advice; these are memory triggers for stories the user lived.
+- At least TWO bullets must be metrics, in words ("five hours → fifteen minutes", "seventy-seven eval cases").
+- "⚡" + deeper technical detail for the first follow-up (≤16 words).
+- "⚡⚡" + even deeper detail or war story anchor for the second follow-up (≤16 words).
+- Last line: "↳" + closing punch (≤10 words): a lesson or one of their signature phrases.
+- Scannable lines, NO paragraphs of prose (except the SAY block). Total ≤ 220 words. Same language as the question.`
   };
-  const styleKey = styleMap[cfg.interviewStyle] ? cfg.interviewStyle : 'complete';
-  const style = styleMap[styleKey];
+  // El renderer puede pedir un estilo puntual (p.ej. el teleprompter pide 'cue');
+  // si no, se usa el configurado en settings.
+  const requested = style && styleMap[style] ? style : null;
+  const styleKey = requested || (styleMap[cfg.interviewStyle] ? cfg.interviewStyle : 'complete');
+  const styleRule = styleMap[styleKey];
 
   // Idioma — reglas mucho más explícitas para que el modelo no defaultee a español
   const lang = cfg.interviewLanguage || 'auto';
@@ -1310,11 +1508,12 @@ Examples:
   Q: "Fale sobre você" → answer in Portuguese.`
     : `🌐 LANGUAGE — CRITICAL: Always reply in ${lang.toUpperCase()}, regardless of the question's language.`;
 
-  const system = `You are answering an INTERVIEW QUESTION on behalf of the candidate. Respond in FIRST PERSON ("I", "my") as if you were the candidate. Be natural, confident, conversational — like a real person speaking, NOT a robot reading a script.
+  const isCue = styleKey === 'cue';
+  const system = `You are answering an INTERVIEW QUESTION on behalf of the candidate. ${isCue ? 'Produce a GLANCEABLE CUE CARD the candidate expands in their own words while looking at the camera.' : 'Respond in FIRST PERSON ("I", "my") as if you were the candidate. Be natural, confident, conversational — like a real person speaking, NOT a robot reading a script.'}
 
-📏 STYLE — ${style}
+📏 STYLE — ${styleRule}
 
-Sound human. Avoid corporate buzzwords ("synergy", "leverage", "ecosystem"). Don't list bullet points — speak in flowing sentences. Show personality.
+${isCue ? '' : 'Sound human. Avoid corporate buzzwords ("synergy", "leverage", "ecosystem"). Don\'t list bullet points — speak in flowing sentences. Show personality.'}
 
 🔤 NUMBERS AS WORDS — CRITICAL FOR READING ALOUD:
 The user reads your answer OUT LOUD. They cannot quickly pronounce digits like "250,000" while speaking — they stumble. So write ALL numbers as words in the language of the answer.
@@ -1328,12 +1527,12 @@ The user reads your answer OUT LOUD. They cannot quickly pronounce digits like "
 - Phone-like exact codes (version numbers, ports, etc.) → use words too: "puerto cuatro mil quinientos", "v dos punto cero"
 - Only exception: if the user EXPLICITLY asks for the number written ("dame el número"), then write it as digits.
 
-📐 PARAGRAPH STRUCTURE — CRITICAL FOR READABILITY:
+${isCue ? '' : `📐 PARAGRAPH STRUCTURE — CRITICAL FOR READABILITY:
 The user is going to READ YOUR ANSWER OUT LOUD in real time, in front of an interviewer. They need to know where to pause and breathe. So you MUST split the answer into clear paragraphs separated by ONE BLANK LINE between them (\\n\\n).
 - Each paragraph = one self-contained idea (around 2-4 sentences).
 - Paragraph break = a natural breath / pause point while speaking.
 - Never deliver a single wall of text. Even short answers (detailed/complete styles) get split.
-- The blank line between paragraphs MUST be an actual double-newline in your output — it's the visual cue the user uses to time their speech.
+- The blank line between paragraphs MUST be an actual double-newline in your output — it's the visual cue the user uses to time their speech.`}
 
 ${langRule}
 
@@ -1361,13 +1560,30 @@ ${kbBlock}`;
   messages.push({ role: 'user', content: `Question: ${question}\n\nReply now, in the SAME language as this question.` });
 
   // Tokens según el estilo elegido
-  const maxTokens = styleKey === 'complete' ? 700 : (styleKey === 'detailed' ? 450 : 250);
+  const maxTokens = styleKey === 'complete' ? 700 : (styleKey === 'detailed' ? 450 : (styleKey === 'cue' ? 700 : 250));
 
-  // Modelo rápido para que la respuesta esté lista en segundos
-  if (cfg.provider === 'openai') {
-    return callOpenAI(cfg.apiKey, 'gpt-4o-mini', system, messages, maxTokens);
+  // Balance velocidad/calidad: Sonnet 4.6 responde en ~2-3s con outputs cortos
+  // y razona mucho mejor que Haiku en preguntas técnicas — clave en entrevistas.
+  // (Sin thinking por defecto, así todo el presupuesto va a la respuesta.)
+  const result = cfg.provider === 'openai'
+    ? await callOpenAI(cfg.apiKey, 'gpt-4o', system, messages, maxTokens)
+    : await callAnthropic(cfg.apiKey, 'claude-sonnet-4-6', system, messages, maxTokens);
+
+  // Persistir cada Q&A a disco (JSONL, append-only) — el historial del panel
+  // vive en memoria y se pierde al cerrar la app; esto queda para revisar
+  // la entrevista después. Best-effort: un fallo acá nunca rompe la respuesta.
+  try {
+    const entry = JSON.stringify({
+      ts: new Date().toISOString(),
+      style: styleKey,
+      question,
+      answer: result.text
+    }) + '\n';
+    fs.appendFileSync(path.join(app.getPath('userData'), 'interview-history.jsonl'), entry);
+  } catch (e) {
+    mainLog.warn('interview-history append failed: ' + e.message);
   }
-  return callAnthropic(cfg.apiKey, 'claude-haiku-4-5', system, messages, maxTokens);
+  return result;
 });
 
 // Lee un archivo de texto/markdown plano para subir como CV/contexto

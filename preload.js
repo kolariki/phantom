@@ -18,7 +18,9 @@ contextBridge.exposeInMainWorld('phantom', {
     setContentProtection: (on) => ipcRenderer.invoke('window:set-content-protection', on),
     setOpacity: (value) => ipcRenderer.invoke('window:set-opacity', value),
     resize: (size) => ipcRenderer.invoke('window:resize', size),
-    openTrading: () => ipcRenderer.invoke('window:open-trading')
+    openTrading: () => ipcRenderer.invoke('window:open-trading'),
+    openTranslator: () => ipcRenderer.invoke('window:open-translator'),
+    closeTranslator: () => ipcRenderer.invoke('window:close-translator')
   },
   capture: {
     screen: () => ipcRenderer.invoke('capture:screen')
@@ -35,6 +37,14 @@ contextBridge.exposeInMainWorld('phantom', {
     start: (opts) => ipcRenderer.invoke('deepgram:start', opts),
     stop: () => ipcRenderer.invoke('deepgram:stop'),
     sendAudio: (int16Buffer) => ipcRenderer.send('deepgram:audio', int16Buffer)
+  },
+  // Traducción en vivo (OpenAI Realtime). El socket vive en el main: el
+  // WebSocket del navegador no puede mandar el header Authorization y la
+  // API key no baja nunca hasta acá.
+  xlate: {
+    start: (opts) => ipcRenderer.invoke('xlate:start', opts),
+    stop: () => ipcRenderer.invoke('xlate:stop'),
+    sendAudio: (base64pcm) => ipcRenderer.send('xlate:audio', base64pcm)
   },
   exchange: {
     fetch: (opts) => ipcRenderer.invoke('exchange:fetch', opts)
@@ -100,7 +110,8 @@ contextBridge.exposeInMainWorld('phantom', {
       'shortcut:analyze', 'shortcut:answer', 'shortcut:multi-capture-add',
       'shortcut:interview-toggle', 'shortcut:manual-record-toggle',
       'opacity:changed',
-      'deepgram:interim', 'deepgram:final', 'deepgram:error'
+      'deepgram:interim', 'deepgram:final', 'deepgram:error',
+      'xlate:text', 'xlate:source', 'xlate:text-done', 'xlate:source-done', 'xlate:error'
     ];
     if (allowed.includes(channel)) {
       ipcRenderer.on(channel, (_e, ...args) => fn(...args));
