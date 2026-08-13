@@ -6238,6 +6238,22 @@ RULES:
     textEl.classList.toggle('cue', tp.open && tp.cue);
   }
 
+  /** Apuntes ↔ texto completo. Si ya hay una pregunta contestada, la
+   *  regenera en el estilo nuevo al toque. Expuesta en window porque el
+   *  atajo global (⌘⇧U) la llama desde afuera del módulo: la ventana ya no
+   *  toma el foco, así que la tecla 'm' pelada sólo funciona si clickeaste
+   *  Phantom antes — y clickearlo es exactamente lo que evitamos. */
+  function toggleStyle() {
+    tp.cue = !tp.cue;
+    localStorage.setItem(CUE_KEY, tp.cue ? '1' : '0');
+    syncTpStyle();
+    setTpStatus(tp.cue ? '● modo apuntes (cue)' : '● modo lectura completa', 'thinking');
+    if (typeof interview !== 'undefined' && interview.lastQuestion) {
+      answerInterviewQuestion(interview.lastQuestion);
+    }
+  }
+  window.__phantomTpToggleStyle = toggleStyle;
+
   function setTpStatus(text, cls) {
     statusEl.textContent = text;
     statusEl.className = 'tp-status' + (cls ? ' ' + cls : '');
@@ -6414,17 +6430,9 @@ RULES:
       wpmEl.textContent = tp.wpm;
       computeSpeed();
     } else if (e.code === 'KeyM' && !e.metaKey && !e.ctrlKey && !e.altKey) {
-      // Alternar cue card ↔ respuesta completa. Si hay una pregunta en vuelo
-      // o contestada, la regenera en el estilo nuevo al toque.
       e.preventDefault();
       e.stopPropagation();
-      tp.cue = !tp.cue;
-      localStorage.setItem(CUE_KEY, tp.cue ? '1' : '0');
-      syncTpStyle();
-      setTpStatus(tp.cue ? '● modo apuntes (cue)' : '● modo lectura completa', 'thinking');
-      if (typeof interview !== 'undefined' && interview.lastQuestion) {
-        answerInterviewQuestion(interview.lastQuestion);
-      }
+      toggleStyle();
     } else if (e.code === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
@@ -6775,4 +6783,37 @@ RULES:
   }
 
   btn.addEventListener('click', () => (watch.active ? stop() : start()));
+})();
+
+// ─── Atajos globales de las acciones nuevas ──────────────────────
+// La ventana ya no toma el foco (para no delatar el cambio de ventana en
+// una entrevista con proctoring), así que estos llegan por IPC desde el
+// main en vez de por keydown. Se resuelven clickeando el botón real para
+// heredar todas las validaciones y efectos de UI.
+(function setupGlobalActionShortcuts() {
+  const clickById = (id) => {
+    const b = document.getElementById(id);
+    if (b) b.click();
+  };
+
+  phantom.on('shortcut:teleprompter', () => clickById('btn-teleprompter'));
+  phantom.on('shortcut:challenge',    () => clickById('btn-challenge'));
+  phantom.on('shortcut:autoscreen',   () => clickById('btn-autoscreen'));
+  phantom.on('shortcut:translator',   () => clickById('btn-open-translator'));
+
+  // Contestar ya con lo escuchado: sólo tiene sentido con la escucha activa.
+  phantom.on('shortcut:answer-now', () => {
+    if (typeof interview !== 'undefined' && interview.active &&
+        interview.buffer.trim().length >= 3) {
+      answerNow();
+    }
+  });
+
+  // Apuntes ↔ texto completo: el teleprompter expone el toggle en una global
+  // para no depender de que la ventana esté enfocada.
+  phantom.on('shortcut:toggle-style', () => {
+    if (typeof window.__phantomTpToggleStyle === 'function') {
+      window.__phantomTpToggleStyle();
+    }
+  });
 })();

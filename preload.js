@@ -109,6 +109,8 @@ contextBridge.exposeInMainWorld('phantom', {
     const allowed = [
       'shortcut:analyze', 'shortcut:answer', 'shortcut:multi-capture-add',
       'shortcut:interview-toggle', 'shortcut:manual-record-toggle',
+      'shortcut:teleprompter', 'shortcut:challenge', 'shortcut:autoscreen',
+      'shortcut:translator', 'shortcut:answer-now', 'shortcut:toggle-style',
       'opacity:changed',
       'deepgram:interim', 'deepgram:final', 'deepgram:error',
       'xlate:text', 'xlate:source', 'xlate:text-done', 'xlate:source-done', 'xlate:error'

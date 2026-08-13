@@ -186,7 +186,7 @@ ipcMain.handle('window:hide', () => {
     n.show();
   }
 });
-ipcMain.handle('window:show', () => { if (mainWindow) mainWindow.show(); });
+ipcMain.handle('window:show', () => { if (mainWindow) mainWindow.showInactive(); });
 ipcMain.handle('window:close', () => { if (mainWindow) mainWindow.close(); });
 ipcMain.handle('window:minimize', () => { if (mainWindow) mainWindow.minimize(); });
 
@@ -196,8 +196,7 @@ ipcMain.handle('window:minimize', () => { if (mainWindow) mainWindow.minimize();
 let tradingWindow = null;
 ipcMain.handle('window:open-trading', () => {
   if (tradingWindow && !tradingWindow.isDestroyed()) {
-    tradingWindow.show();
-    tradingWindow.focus();
+    tradingWindow.showInactive();
     return { ok: true, focused: true };
   }
   // Open the Trading window as a tall, narrow panel that fills the screen
@@ -213,7 +212,7 @@ ipcMain.handle('window:open-trading', () => {
     minWidth: 520,
     minHeight: 600,
     title: 'Phantom — Trading',
-    show: true,
+    show: false,
     backgroundColor: '#0a0604',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -225,6 +224,7 @@ ipcMain.handle('window:open-trading', () => {
   tradingWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'), {
     query: { view: 'trading' }
   });
+  tradingWindow.once('ready-to-show', () => tradingWindow.showInactive());
   tradingWindow.on('closed', () => { tradingWindow = null; });
   return { ok: true, opened: true };
 });
@@ -237,8 +237,7 @@ let translatorWindow = null;
 
 ipcMain.handle('window:open-translator', () => {
   if (translatorWindow && !translatorWindow.isDestroyed()) {
-    translatorWindow.show();
-    translatorWindow.focus();
+    translatorWindow.showInactive();
     return { ok: true, focused: true };
   }
 
@@ -260,7 +259,7 @@ ipcMain.handle('window:open-translator', () => {
     transparent: false,
     backgroundColor: '#0b1220',
     alwaysOnTop: true,
-    show: true,
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -279,6 +278,7 @@ ipcMain.handle('window:open-translator', () => {
   translatorWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'), {
     query: { view: 'translator' }
   });
+  translatorWindow.once('ready-to-show', () => translatorWindow.showInactive());
   translatorWindow.on('closed', () => { translatorWindow = null; });
   return { ok: true, opened: true };
 });
@@ -430,7 +430,7 @@ ipcMain.handle('capture:screen', async () => {
       if (sources.length && sources[0].thumbnail) {
         const dataUrl = sources[0].thumbnail.toDataURL();
         if (dataUrl && dataUrl.length > 1000) {
-          if (wasVisible) mainWindow.show();
+          if (wasVisible) mainWindow.showInactive();
           return compressImageDataURL(dataUrl);
         }
       }
@@ -446,11 +446,11 @@ ipcMain.handle('capture:screen', async () => {
   // ── Método 2: comando shell `screencapture` ──
   try {
     const dataUrl = await captureViaShell();
-    if (wasVisible) mainWindow.show();
+    if (wasVisible) mainWindow.showInactive();
     return dataUrl;
   } catch (e) {
     console.warn('[capture] Método 2 falló:', e.message);
-    if (wasVisible) mainWindow.show();
+    if (wasVisible) mainWindow.showInactive();
     // Si los dos fallan, abrir settings y dar mensaje claro
     if (process.platform === 'darwin') {
       shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
@@ -1940,10 +1940,16 @@ function toggleWindow() {
   else ensureVisible();
 }
 
+// Mostrar SIN robar el foco.
+//
+// Esto no es cosmético: al tomar el foco, la app que estaba adelante recibe
+// un blur, y una página web lo ve al instante vía window.blur /
+// visibilitychange. En una entrevista con proctoring, cada atajo de Phantom
+// era una señal de "se fue de la pantalla". showInactive() muestra la
+// ventana sin activarla, así que el navegador nunca pierde el foco.
 function ensureVisible() {
   if (!mainWindow) return;
-  mainWindow.show();
-  mainWindow.focus();
+  mainWindow.showInactive();
 }
 
 // ─── Atajos globales ─────────────────────────────────────────────
@@ -1978,7 +1984,9 @@ function registerShortcuts() {
         mainLog.warn(`shortcut hit ${channel} but mainWindow is null`);
         return;
       }
-      if (!mainWindow.isVisible()) mainWindow.show();
+      // showInactive, nunca show(): un atajo no puede costar el foco del
+      // navegador (ver ensureVisible).
+      if (!mainWindow.isVisible()) mainWindow.showInactive();
       try {
         mainWindow.webContents.send(channel, Date.now());
         mainLog.info(`shortcut sent to renderer: ${channel}`);
@@ -2004,6 +2012,32 @@ function registerShortcuts() {
 
   reg('CommandOrControl+Shift+M', 'multi-capture',      sendToRenderer('shortcut:multi-capture-add'),
       ['Alt+Shift+M', 'CommandOrControl+Option+M']);
+
+  // ── Globales porque la ventana ya no toma el foco ───────────────
+  // Antes alcanzaba con manejarlos como keydown adentro del renderer, pero
+  // eso exige que Phantom esté enfocado — justo lo que dejamos de hacer para
+  // no delatar el cambio de foco. Registrados acá funcionan con el navegador
+  // adelante, que es la única situación que importa en una entrevista.
+  reg('CommandOrControl+Shift+K', 'teleprompter',  sendToRenderer('shortcut:teleprompter'),
+      ['Alt+Shift+K', 'CommandOrControl+Option+K']);
+
+  reg('CommandOrControl+Shift+E', 'challenge',     sendToRenderer('shortcut:challenge'),
+      ['Alt+Shift+E', 'CommandOrControl+Option+E']);
+
+  reg('CommandOrControl+Shift+F', 'auto-pantalla', sendToRenderer('shortcut:autoscreen'),
+      ['Alt+Shift+F', 'CommandOrControl+Option+F']);
+
+  reg('CommandOrControl+Shift+L', 'traductor',     sendToRenderer('shortcut:translator'),
+      ['Alt+Shift+L', 'CommandOrControl+Option+L']);
+
+  // Contestar YA con lo escuchado hasta el momento. Con modificadores a
+  // propósito: un Enter pelado global le robaría la tecla a todo el sistema.
+  reg('CommandOrControl+Shift+Return', 'contestar ya', sendToRenderer('shortcut:answer-now'),
+      ['Alt+Shift+Return', 'CommandOrControl+Option+Return']);
+
+  // Alternar tarjeta de apuntes ↔ texto completo.
+  reg('CommandOrControl+Shift+U', 'cue/completo',  sendToRenderer('shortcut:toggle-style'),
+      ['Alt+Shift+U', 'CommandOrControl+Option+U']);
 
   // Cmd+Shift+O → ciclar opacidad (100% → 75% → 50% → 30% → 100%)
   globalShortcut.register('CommandOrControl+Shift+O', () => {
