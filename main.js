@@ -114,7 +114,12 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: false,
+      // Chromium estrangula los timers de una ventana oculta u ocluida
+      // (hasta 1/minuto). El ciclo de auto-pantalla vive de un setInterval
+      // de 2.5s y la ventana pasa buena parte del tiempo tapada por el
+      // navegador, así que sin esto el ciclo se muere solo.
+      backgroundThrottling: false
     }
   });
 
@@ -409,9 +414,17 @@ ipcMain.handle('capture:screen', async () => {
     }
   }
 
-  const wasVisible = mainWindow && mainWindow.isVisible();
-  if (wasVisible) mainWindow.hide();
-  await new Promise(r => setTimeout(r, 120));
+  // Ocultar la ventana antes de capturar sólo tiene sentido si NO está la
+  // protección de contenido: con stealth activo la ventana ya es invisible
+  // para desktopCapturer y para /usr/sbin/screencapture (NSWindowSharingNone),
+  // así que esconderla no cambia la imagen y sí se nota. Con auto-pantalla
+  // capturando cada 2.5s, ese hide/show era un parpadeo constante.
+  const stealthOn = loadConfig().stealth !== false;
+  const wasVisible = !stealthOn && mainWindow && mainWindow.isVisible();
+  if (wasVisible) {
+    mainWindow.hide();
+    await new Promise(r => setTimeout(r, 120));
+  }
 
   let lastError;
 

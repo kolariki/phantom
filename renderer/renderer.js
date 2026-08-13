@@ -6678,10 +6678,22 @@ RULES:
   }
 
   const WATCH_PROMPT =
-    'The screen changed. Answer whatever is on it now — a question, an exercise, ' +
-    'a form, an error. Give the answer itself, not a description of the page and ' +
-    'not instructions about where to click. If it is a coding or SQL exercise, ' +
-    'solve it. If nothing on screen asks anything, reply with exactly: (nada que contestar)';
+    'Answer what is on screen right now.';
+
+  // Prompt propio en vez del de challenge: aquél fuerza seis secciones con
+  // encabezados, que para un multiple choice es absurdo y lento. Acá lo que
+  // importa es que la respuesta entre de un vistazo.
+  const WATCH_SYSTEM = `You are looking at the user's screen during a live test or interview. Answer whatever is on it — a multiple-choice question, an exercise, a form, an error message.
+
+Rules:
+- LEAD WITH THE ANSWER. For multiple choice: the option itself, first line, bold. Then one short line of why.
+- Show the arithmetic when there is any: "six times sixteen = ninety-six".
+- For a coding or SQL exercise: the working solution, then one line on the approach.
+- Never describe the page and never give click-by-click instructions. The user can see the screen; they need the answer.
+- Be brief. The user is reading this while someone watches them.
+- If the screen genuinely asks nothing (a desktop, an editor with no task, a settings page), reply with exactly: (nada que contestar)
+
+${SECURITY_RULE}`;
 
   async function answerScreen(screenshot) {
     watch.busy = true;
@@ -6690,10 +6702,7 @@ RULES:
 
     try {
       const messages = [{ role: 'user', content: await buildContent(WATCH_PROMPT, screenshot) }];
-      const resp = await phantom.ai.call({
-        messages,
-        system: getSystemPrompt('challenge')
-      });
+      const resp = await phantom.ai.call({ messages, system: WATCH_SYSTEM });
       const reply = (resp.text || '').trim();
 
       // El modelo avisa cuando la pantalla no pregunta nada: sin esto, cada
@@ -6735,7 +6744,10 @@ RULES:
       if (!shot) return;
       print = await fingerprint(shot);
     } catch (err) {
+      // A la barra de estado: un console.warn acá es invisible para el
+      // usuario y el modo parece colgado ("mirando" para siempre).
       console.warn('watcher capture:', err.message);
+      setWatchStatus('⚠ captura: ' + err.message, 'err');
       return;
     }
 
