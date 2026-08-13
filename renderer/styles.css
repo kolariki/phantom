@@ -3373,3 +3373,16 @@ body.translator-view .card { display: none !important; }
   direction: rtl;               /* mantiene visible el final de la frase */
   text-align: left;
 }
+
+/* Auto-pantalla activa — el botón late para que se note de un vistazo que
+   hay un ciclo corriendo y consumiendo API. */
+.btn.active {
+  background: linear-gradient(135deg, #059669, #10b981) !important;
+  color: #fff !important;
+  border-color: #10b981 !important;
+  animation: watch-pulse 2s ease-in-out infinite;
+}
+@keyframes watch-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45); }
+  50%      { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+}

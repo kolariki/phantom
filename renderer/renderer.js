@@ -6085,6 +6085,7 @@ RULES:
     { id: 'btn-answer',        code: 'KeyA', meta: 1, shift: 1, badge: '⌘⇧A', global: 1 },
     { id: 'btn-voice-ask',     code: 'KeyV', meta: 1, shift: 1, badge: '⌘⇧V' },
     { id: 'btn-challenge',     code: 'KeyE', meta: 1, shift: 1, badge: '⌘⇧E' },
+    { id: 'btn-autoscreen',    code: 'KeyF', meta: 1, shift: 1, badge: '⌘⇧F' },
     { id: 'btn-cheatsheet',    code: 'KeyC', meta: 1, shift: 1, badge: '⌘⇧C' },
     { id: 'btn-multi-capture', code: 'KeyM', meta: 1, shift: 1, badge: '⌘⇧M', global: 1 },
 
@@ -6588,4 +6589,190 @@ RULES:
 
   // Limpiar el stream si cierran la ventana desde el sistema.
   window.addEventListener('beforeunload', () => { if (xl.active) stop(); });
+})();
+
+// ════════════════════════════════════════════════════════════════
+// AUTO-PANTALLA — mira la pantalla sola y contesta lo que aparece
+//
+// El problema real acá no es capturar, es NO gastar: mandar cada
+// captura al modelo serían decenas de miles de tokens por minuto.
+// Por eso el ciclo compara localmente (gratis) y sólo llama a la API
+// cuando la pantalla cambió de verdad:
+//
+//   capturar → huella 16x16 en gris → comparar con la anterior
+//     ├─ igual        → no hace nada (costo cero)
+//     └─ cambió       → espera un tick a que se estabilice
+//                       (evita disparar a mitad de scroll o de carga)
+//                       → recién ahí contesta
+//
+// Si el teleprompter está abierto, la respuesta sale ahí en grande:
+// se cuelga del mismo bus de eventos que el modo entrevista, así que
+// el teleprompter no necesita saber de dónde vino.
+// ════════════════════════════════════════════════════════════════
+(function setupScreenWatcher() {
+  const btn = document.getElementById('btn-autoscreen');
+  if (!btn) return;
+
+  const GRID = 16;              // huella de 16x16 celdas
+  const watch = {
+    active: false,
+    timer: null,
+    busy: false,
+    INTERVAL_MS: 2500,
+    DIFF_THRESHOLD: 0.06,       // 6% de celdas distintas = cambió la pantalla
+    CELL_DELTA: 18,             // diferencia de luma para contar una celda
+    lastPrint: null,            // última pantalla ya contestada
+    pendingPrint: null,         // cambio detectado, esperando que se estabilice
+    answers: 0
+  };
+
+  // Canvas reutilizado — crear uno por captura genera basura innecesaria
+  // cuando el ciclo corre cada 2.5s durante una hora.
+  const canvas = document.createElement('canvas');
+  canvas.width = GRID;
+  canvas.height = GRID;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+  /** Reduce la captura a 256 valores de gris. Es la comparación más barata
+   *  que distingue "cambió la página" de "se movió el cursor". */
+  function fingerprint(dataUrl) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0, GRID, GRID);
+        const { data } = ctx.getImageData(0, 0, GRID, GRID);
+        const gray = new Uint8Array(GRID * GRID);
+        for (let i = 0; i < gray.length; i++) {
+          const p = i * 4;
+          // Luma perceptual: el ojo pesa mucho más el verde que el azul.
+          gray[i] = (data[p] * 0.299 + data[p + 1] * 0.587 + data[p + 2] * 0.114) | 0;
+        }
+        resolve(gray);
+      };
+      img.onerror = () => reject(new Error('no se pudo leer la captura'));
+      img.src = dataUrl;
+    });
+  }
+
+  /** Proporción de celdas que cambiaron entre dos huellas. */
+  function diff(a, b) {
+    if (!a || !b) return 1;
+    let changed = 0;
+    for (let i = 0; i < a.length; i++) {
+      if (Math.abs(a[i] - b[i]) > watch.CELL_DELTA) changed++;
+    }
+    return changed / a.length;
+  }
+
+  function setWatchStatus(text, kind) {
+    setStatus(text, kind);
+    btn.textContent = watch.active ? `👁 Mirando (${watch.answers})` : '👁 Auto-pantalla';
+  }
+
+  const WATCH_PROMPT =
+    'The screen changed. Answer whatever is on it now — a question, an exercise, ' +
+    'a form, an error. Give the answer itself, not a description of the page and ' +
+    'not instructions about where to click. If it is a coding or SQL exercise, ' +
+    'solve it. If nothing on screen asks anything, reply with exactly: (nada que contestar)';
+
+  async function answerScreen(screenshot) {
+    watch.busy = true;
+    interviewEmit('question', { question: '👁 Pantalla nueva detectada' });
+    setWatchStatus('👁 Analizando la pantalla…', 'busy');
+
+    try {
+      const messages = [{ role: 'user', content: await buildContent(WATCH_PROMPT, screenshot) }];
+      const resp = await phantom.ai.call({
+        messages,
+        system: getSystemPrompt('challenge')
+      });
+      const reply = (resp.text || '').trim();
+
+      // El modelo avisa cuando la pantalla no pregunta nada: sin esto, cada
+      // cambio de ventana produciría un párrafo describiendo el escritorio.
+      if (/^\(?nada que contestar\)?$/i.test(reply)) {
+        setWatchStatus('👁 Mirando… (sin nada que contestar)', 'ok');
+        return;
+      }
+
+      watch.answers++;
+      conversationEl.innerHTML = '';
+      addMessage('user', '👁 Pantalla detectada');
+      const el = addMessage('assistant', '', true);
+      el.classList.remove('loading');
+      el.innerHTML = renderMarkdown(reply);
+      chatWrap.style.display = 'flex';
+      state.messages = [
+        { role: 'user', content: WATCH_PROMPT },
+        { role: 'assistant', content: reply }
+      ];
+
+      interviewEmit('answer', { question: 'Pantalla', answer: reply });
+      setWatchStatus('👁 Mirando…', 'ok');
+    } catch (err) {
+      interviewEmit('error', { message: err.message });
+      setWatchStatus('⚠ ' + err.message, 'err');
+    } finally {
+      watch.busy = false;
+    }
+  }
+
+  async function tick() {
+    // No competir con una acción manual ni con una respuesta en curso.
+    if (!watch.active || watch.busy || state.busy) return;
+
+    let print, shot;
+    try {
+      shot = await captureScreen();
+      if (!shot) return;
+      print = await fingerprint(shot);
+    } catch (err) {
+      console.warn('watcher capture:', err.message);
+      return;
+    }
+
+    // Primera captura tras activar: contestar de una, es lo que el usuario
+    // está mirando en este momento.
+    if (!watch.lastPrint) {
+      watch.lastPrint = print;
+      await answerScreen(shot);
+      return;
+    }
+
+    if (diff(print, watch.lastPrint) <= watch.DIFF_THRESHOLD) {
+      watch.pendingPrint = null;   // pantalla quieta
+      return;
+    }
+
+    // Cambió. Esperar a que se estabilice: durante un scroll o una carga cada
+    // captura difiere de la anterior, y contestar ahí daría media pregunta.
+    if (watch.pendingPrint && diff(print, watch.pendingPrint) <= watch.DIFF_THRESHOLD) {
+      watch.lastPrint = print;
+      watch.pendingPrint = null;
+      await answerScreen(shot);
+    } else {
+      watch.pendingPrint = print;
+      setWatchStatus('👁 Cambio detectado, esperando…', 'busy');
+    }
+  }
+
+  function start() {
+    watch.active = true;
+    watch.lastPrint = null;
+    watch.pendingPrint = null;
+    watch.answers = 0;
+    btn.classList.add('active');
+    setWatchStatus('👁 Mirando la pantalla…', 'ok');
+    watch.timer = setInterval(tick, watch.INTERVAL_MS);
+    tick();
+  }
+
+  function stop() {
+    watch.active = false;
+    if (watch.timer) { clearInterval(watch.timer); watch.timer = null; }
+    btn.classList.remove('active');
+    setWatchStatus(`👁 Auto-pantalla detenida (${watch.answers} respuestas)`, '');
+  }
+
+  btn.addEventListener('click', () => (watch.active ? stop() : start()));
 })();
